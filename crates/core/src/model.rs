@@ -38,7 +38,7 @@ pub struct DownloadRequest {
 }
 
 /// Information extracted from an `InspectInfo` HEAD/GET request.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ResourceInfo {
     /// Final URL after redirects.
     pub final_url: Url,
