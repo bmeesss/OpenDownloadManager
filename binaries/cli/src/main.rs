@@ -21,10 +21,10 @@ async fn main() -> ExitCode {
     init_tracing(args.verbose, args.quiet, is_download);
 
     let code = match run(args).await {
-        Ok(()) => exit::ExitCode::Success,
+        Ok(()) => exit::Exit::Success,
         Err(err) => {
             tracing::error!(error = %err, "command failed");
-            exit::ExitCode::from_error(&root_cause(&err))
+            exit::Exit::from_error(&root_cause(&err))
         }
     };
     code.into()

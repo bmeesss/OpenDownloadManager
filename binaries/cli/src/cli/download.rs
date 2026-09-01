@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clap::Args;
 use odm_core::{DownloadRequest, Error, ProgressSink};
 use odm_download_engine::{DownloadEngine, DownloadOptions, EngineConfig, default_output_for};
-use odm_storage::validate_path;
+use odm_storage::validate_output_path;
 use url::Url;
 
 use crate::progress::ProgressReporter;
@@ -18,8 +18,9 @@ pub struct DownloadCmd {
     #[arg(value_name = "URL")]
     pub url: String,
 
-    /// Local file path to write the download to. If omitted, the
-    /// filename is derived from the URL.
+    /// Local file path to write the download to. May be relative or
+    /// absolute. If omitted, the filename is derived from the URL and the
+    /// file is written to the current directory.
     #[arg(long, value_name = "PATH")]
     pub output: Option<PathBuf>,
 
@@ -36,7 +37,7 @@ pub async fn run(cmd: DownloadCmd) -> anyhow::Result<()> {
 
     let output = match cmd.output {
         Some(p) => {
-            validate_path(&p).map_err(|e| anyhow::anyhow!(e))?;
+            validate_output_path(&p).map_err(anyhow::Error::from)?;
             p
         }
         None => default_output_for(&url),

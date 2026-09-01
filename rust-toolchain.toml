@@ -1,0 +1,9 @@
+# Pinned toolchain.
+#
+# The declared MSRV (`rust-version` in the workspace manifest) is 1.85, which
+# is also what `wiremock` 0.6.5 requires (it is published as edition 2024).
+# CI uses the same version so local and CI behaviour match.
+[toolchain]
+channel = "1.85.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

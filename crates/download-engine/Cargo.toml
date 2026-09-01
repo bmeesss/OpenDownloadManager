@@ -12,8 +12,5 @@ odm-storage = { path = "../storage" }
 
 tokio = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
 url = { workspace = true }
-bytes = { workspace = true }
 futures-util = { workspace = true }
-async-trait = { workspace = true }

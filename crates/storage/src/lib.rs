@@ -15,6 +15,6 @@ mod storage;
 
 pub use path::{
     InvalidFileNameReason, InvalidPathReason, ensure_parent_dir, sanitize_filename,
-    validate_filename, validate_path,
+    validate_filename, validate_output_path, validate_path,
 };
-pub use storage::{FileStorage, PartFileHandle, Storage};
+pub use storage::{FileStorage, PartFileHandle};

@@ -3,8 +3,17 @@
 //! Every user-provided or remote-provided path or filename goes
 //! through these functions. They are deliberately strict: any
 //! ambiguity is treated as an error rather than silently coerced.
+//!
+//! There are two distinct validators, and it matters which one is used:
+//!
+//! * [`validate_path`] is for **untrusted relative** paths, e.g. a name
+//!   derived from a URL or from a server-supplied header. Absolute paths
+//!   are rejected outright.
+//! * [`validate_output_path`] is for the **destination the user chose**
+//!   (e.g. `--output`). Absolute paths are allowed there, but traversal,
+//!   control characters and unusable final components still are not.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use odm_core::{Error, Result};
 
@@ -43,6 +52,9 @@ pub enum InvalidFileNameReason {
 /// Validates a full output path. The path must be relative, free of
 /// `..` components, and contain no control characters or NUL bytes.
 ///
+/// This validator is for **untrusted** input. If you are validating a
+/// destination the user picked, use [`validate_output_path`] instead.
+///
 /// # Errors
 /// Returns [`Error::InvalidPath`] describing the first violation.
 pub fn validate_path(path: &Path) -> Result<()> {
@@ -71,13 +83,7 @@ pub fn validate_path(path: &Path) -> Result<()> {
             Component::CurDir => {}
             Component::Normal(s) => {
                 saw_normal = true;
-                for b in s.as_encoded_bytes() {
-                    if *b < 0x20 || *b == 0x7F {
-                        return Err(Error::InvalidPath(reason_str_path(
-                            InvalidPathReason::ControlCharacter,
-                        )));
-                    }
-                }
+                reject_control_bytes(s.as_encoded_bytes())?;
             }
         }
     }
@@ -86,6 +92,73 @@ pub fn validate_path(path: &Path) -> Result<()> {
             InvalidPathReason::Empty,
         )));
     }
+    Ok(())
+}
+
+/// Validates a destination path chosen by the user.
+///
+/// Unlike [`validate_path`], absolute paths **are** accepted: this is the
+/// validator for `--output`, not for names derived from a URL or from a
+/// server response. It still rejects:
+///
+/// * empty paths, and paths with no usable final component
+/// * `..` (parent traversal) components anywhere in the path
+/// * NUL bytes and control characters anywhere in the path
+/// * final components that are not valid file names
+/// * Windows reserved device names (`CON`, `NUL`, `LPT1`, ...) on **every**
+///   platform, so that a download set stays portable across OSes
+///
+/// # Errors
+/// Returns [`Error::InvalidPath`] or [`Error::InvalidFileName`] describing
+/// the first violation.
+pub fn validate_output_path(path: &Path) -> Result<()> {
+    if path.as_os_str().is_empty() {
+        return Err(Error::InvalidPath(reason_str_path(InvalidPathReason::Empty)));
+    }
+    if path.as_os_str().as_encoded_bytes().contains(&0) {
+        return Err(Error::InvalidPath(reason_str_path(
+            InvalidPathReason::NulByte,
+        )));
+    }
+
+    let mut saw_normal = false;
+    for component in path.components() {
+        match component {
+            // Absolute destinations are the whole point of this validator,
+            // so roots and Windows prefixes are accepted here.
+            Component::Prefix(_) | Component::RootDir => {}
+            Component::ParentDir => {
+                return Err(Error::InvalidPath(reason_str_path(
+                    InvalidPathReason::ParentTraversal,
+                )));
+            }
+            Component::CurDir => {}
+            Component::Normal(s) => {
+                saw_normal = true;
+                reject_control_bytes(s.as_encoded_bytes())?;
+            }
+        }
+    }
+    if !saw_normal {
+        return Err(Error::InvalidPath(reason_str_path(
+            InvalidPathReason::Empty,
+        )));
+    }
+
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::InvalidFileName("output path has no usable final component".into()))?;
+
+    validate_filename(name)?;
+
+    if is_windows_reserved_name(name) {
+        return Err(Error::InvalidFileName(format!(
+            "{}: reserved Windows name",
+            reason_str_file(InvalidFileNameReason::ReservedName)
+        )));
+    }
+
     Ok(())
 }
 
@@ -129,39 +202,11 @@ pub fn validate_filename(name: &str) -> Result<()> {
         }
     }
     #[cfg(windows)]
-    {
-        let upper = name.to_ascii_uppercase();
-        let stem = upper.split('.').next().unwrap_or("");
-        if matches!(
-            stem,
-            "CON"
-                | "PRN"
-                | "AUX"
-                | "NUL"
-                | "COM1"
-                | "COM2"
-                | "COM3"
-                | "COM4"
-                | "COM5"
-                | "COM6"
-                | "COM7"
-                | "COM8"
-                | "COM9"
-                | "LPT1"
-                | "LPT2"
-                | "LPT3"
-                | "LPT4"
-                | "LPT5"
-                | "LPT6"
-                | "LPT7"
-                | "LPT8"
-                | "LPT9"
-        ) {
-            return Err(Error::InvalidFileName(format!(
-                "{}: reserved Windows name",
-                reason_str_file(InvalidFileNameReason::ReservedName)
-            )));
-        }
+    if is_windows_reserved_name(name) {
+        return Err(Error::InvalidFileName(format!(
+            "{}: reserved Windows name",
+            reason_str_file(InvalidFileNameReason::ReservedName)
+        )));
     }
     Ok(())
 }
@@ -196,20 +241,57 @@ pub fn sanitize_filename(name: &str) -> String {
 /// Returns [`Error::Filesystem`] on I/O failure.
 pub async fn ensure_parent_dir(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() && !tokio::fs::try_exists(parent).await.unwrap_or(false)
-        {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| Error::Filesystem(format!("create_dir_all({}): {e}", parent.display())))?;
+        if !parent.as_os_str().is_empty() && !tokio::fs::try_exists(parent).await.unwrap_or(false) {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                Error::Filesystem(format!("create_dir_all({}): {e}", parent.display()))
+            })?;
         }
     }
     Ok(())
 }
 
-/// Joins a base directory with a relative path, validating the result.
-pub(crate) fn join_validated(base: &Path, rel: &Path) -> Result<PathBuf> {
-    validate_path(rel)?;
-    Ok(base.join(rel))
+/// Returns `true` if `name` is a Windows reserved device name.
+///
+/// Checked on every platform: a download manager that accepts `CON` on
+/// Linux and rejects it on Windows produces download sets that do not
+/// travel between machines.
+fn is_windows_reserved_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    let stem = upper.split('.').next().unwrap_or("");
+    matches!(
+        stem,
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+fn reject_control_bytes(bytes: &[u8]) -> Result<()> {
+    if bytes.iter().any(|b| *b < 0x20 || *b == 0x7F) {
+        return Err(Error::InvalidPath(reason_str_path(
+            InvalidPathReason::ControlCharacter,
+        )));
+    }
+    Ok(())
 }
 
 fn reason_str_path(r: InvalidPathReason) -> String {

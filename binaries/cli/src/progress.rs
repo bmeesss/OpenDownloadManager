@@ -58,22 +58,23 @@ impl ProgressReporter {
 
 impl ProgressSink for ProgressReporter {
     fn on_progress(&self, p: DownloadProgress) {
+        // Elapsed time is measured locally. `DownloadProgress::at` is a
+        // wall-clock `SystemTime` intended for logging and, later, for
+        // forwarding across process boundaries; it is deliberately not
+        // used to drive the bar.
+        let elapsed = self.started.elapsed().as_secs_f64();
+
         if let Some(bar) = self.inner.lock().unwrap().as_ref() {
             if let Some(total) = p.total_bytes {
                 bar.set_length(total);
             }
             bar.set_position(p.downloaded_bytes);
-            let elapsed = p.at.duration_since(self.started).as_secs_f64();
             let bps = if elapsed > 0.0 {
                 (p.downloaded_bytes as f64 / elapsed) as u64
             } else {
                 0
             };
-            bar.set_message(format!(
-                "{}  {}/s",
-                self.name,
-                HumanBytes(bps)
-            ));
+            bar.set_message(format!("{}  {}/s", self.name, HumanBytes(bps)));
         }
     }
 }

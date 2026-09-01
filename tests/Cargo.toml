@@ -9,14 +9,11 @@ description = "Integration tests for OpenDownloadManager."
 [dependencies]
 odm-core = { path = "../crates/core" }
 odm-download-engine = { path = "../crates/download-engine" }
-odm-http-client = { path = "../crates/http-client" }
-odm-storage = { path = "../crates/storage" }
+odm-http-client = { path = "../http-client" }
+odm-storage = { path = "../storage" }
 
 tokio = { workspace = true }
-reqwest = { workspace = true }
 wiremock = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }
-bytes = { workspace = true }
 futures-util = { workspace = true }
-anyhow = { workspace = true }

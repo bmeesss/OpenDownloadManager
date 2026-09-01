@@ -1,6 +1,6 @@
-//! Domain models used across the workspace.
+//! Shared domain models and error types for OpenDownloadManager.
 
-use std::time::Instant;
+use std::time::SystemTime;
 
 use url::Url;
 
@@ -72,21 +72,33 @@ pub struct DownloadProgress {
     pub downloaded_bytes: u64,
     /// Total bytes expected, if known.
     pub total_bytes: Option<u64>,
-    /// Wall-clock instant the snapshot was taken.
-    pub at: Instant,
+    /// Wall-clock time at which the snapshot was taken.
+    ///
+    /// This is a [`SystemTime`] rather than an [`std::time::Instant`]:
+    /// an `Instant` is only meaningful inside the process that created
+    /// it and cannot be serialised, whereas progress snapshots are
+    /// expected to be forwarded to other layers (and, later, across
+    /// process boundaries to a GUI).
+    pub at: SystemTime,
 }
 
 impl DownloadProgress {
-    /// Computes the percentage (0..=100) when total is known.
+    /// Computes the completion percentage when the total size is known.
+    ///
+    /// The result is clamped to `0.0..=100.0`: a server may understate
+    /// `Content-Length`, and reporting more than 100% is never useful.
+    ///
+    /// Returns `None` when the total is unknown *or* zero. A zero-byte
+    /// expectation carries no information about how much has arrived, so
+    /// reporting 100% for it would be a fabrication.
     #[must_use]
     pub fn percent(&self) -> Option<f64> {
-        self.total_bytes.and_then(|t| {
-            if t == 0 {
-                Some(100.0)
-            } else {
-                Some((self.downloaded_bytes as f64 / t as f64) * 100.0)
-            }
-        })
+        self.total_bytes
+            .filter(|total| *total > 0)
+            .map(|total| {
+                let pct = (self.downloaded_bytes as f64 / total as f64) * 100.0;
+                pct.clamp(0.0, 100.0)
+            })
     }
 }
 
@@ -109,4 +121,49 @@ pub struct DownloadSummary {
 pub trait ProgressSink: Send + Sync {
     /// Called with each progress snapshot. Implementations should be cheap.
     fn on_progress(&self, progress: DownloadProgress);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn progress(downloaded: u64, total: Option<u64>) -> DownloadProgress {
+        DownloadProgress {
+            downloaded_bytes: downloaded,
+            total_bytes: total,
+            at: SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn percent_is_none_when_total_is_unknown() {
+        assert_eq!(progress(512, None).percent(), None);
+    }
+
+    #[test]
+    fn percent_is_none_when_total_is_zero() {
+        // A zero-byte expectation says nothing about progress; it must not
+        // be reported as a fake 100%.
+        assert_eq!(progress(0, Some(0)).percent(), None);
+        assert_eq!(progress(1024, Some(0)).percent(), None);
+    }
+
+    #[test]
+    fn percent_reports_fraction_complete() {
+        let pct = progress(256, Some(1024)).percent().expect("some");
+        assert!((pct - 25.0).abs() < f64::EPSILON, "got {pct}");
+    }
+
+    #[test]
+    fn percent_reports_100_when_complete() {
+        let pct = progress(1024, Some(1024)).percent().expect("some");
+        assert!((pct - 100.0).abs() < f64::EPSILON, "got {pct}");
+    }
+
+    #[test]
+    fn percent_is_clamped_when_server_understates_length() {
+        // A lying server must not push the reported percentage past 100.
+        let pct = progress(4096, Some(1024)).percent().expect("some");
+        assert!((pct - 100.0).abs() < f64::EPSILON, "got {pct}");
+    }
 }

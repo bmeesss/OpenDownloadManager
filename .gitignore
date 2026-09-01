@@ -1,0 +1,14 @@
+# Build artifacts
+/target
+**/*.rs.bk
+
+# Partial downloads. The engine writes `.<name>.<uuid>.part` next to the
+# output file and retains it when a download fails, so make sure a stray
+# one never ends up in version control.
+*.part
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
