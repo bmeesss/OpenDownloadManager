@@ -114,9 +114,8 @@ fn parse_content_disposition_filename(value: &str) -> Option<String> {
         if let Some(rest) = part.strip_prefix("filename*=") {
             // RFC 5987: charset'lang'percent-encoded
             if let Some((_charset, encoded)) = rest.split_once("''") {
-                if let Ok(decoded) = percent_decode(encoded) {
-                    return Some(decoded);
-                }
+                let decoded = percent_decode(encoded);
+                return Some(decoded);
             }
         } else if let Some(rest) = part.strip_prefix("filename=") {
             let trimmed = rest.trim_matches('"');
@@ -128,7 +127,7 @@ fn parse_content_disposition_filename(value: &str) -> Option<String> {
     None
 }
 
-fn percent_decode(input: &str) -> std::result::Result<String, std::convert::Infallible> {
+fn percent_decode(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -143,7 +142,7 @@ fn percent_decode(input: &str) -> std::result::Result<String, std::convert::Infa
         out.push(bytes[i]);
         i += 1;
     }
-    Ok(String::from_utf8_lossy(&out).into_owned())
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn hex(b: u8) -> Option<u8> {
