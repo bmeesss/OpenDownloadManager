@@ -1,9 +1,27 @@
 # Pinned toolchain.
 #
-# The declared MSRV (`rust-version` in the workspace manifest) is 1.85, which
-# is also what `wiremock` 0.6.5 requires (it is published as edition 2024).
+# The declared MSRV (`rust-version` in the workspace manifest) is 1.88, and
 # CI uses the same version so local and CI behaviour match.
+#
+# 1.88 is the floor imposed by the resolved dependency graph, not by this
+# project's own code. `url` pulls in `idna`, which pulls in the `icu_*`
+# crates, and the currently published versions of those require a newer
+# compiler than the project originally targeted:
+#
+#   icu_collections 2.3.0        -> 1.88
+#   icu_locale_core 2.3.0        -> 1.88
+#   icu_normalizer 2.3.0         -> 1.88
+#   icu_normalizer_data 2.3.0    -> 1.88
+#   icu_properties 2.3.0         -> 1.88
+#   icu_properties_data 2.3.0    -> 1.88
+#   icu_provider 2.3.1           -> 1.88
+#   idna_adapter 1.2.2           -> 1.86
+#
+# Note that this file overrides whatever toolchain a CI step happens to
+# install: rustup honours `rust-toolchain.toml` for any cargo or rustc
+# invocation made inside this directory, and fetches the pinned channel on
+# demand if it is not already present.
 [toolchain]
-channel = "1.85.0"
+channel = "1.88.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

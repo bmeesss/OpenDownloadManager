@@ -39,8 +39,10 @@ cargo build --release
 
 The release binary lives at `target/release/download-manager`.
 
-The toolchain is pinned by `rust-toolchain.toml` (1.85.0), which matches
-the declared MSRV.
+The toolchain is pinned by `rust-toolchain.toml` (1.88.0), which matches
+the declared MSRV. 1.88 is the floor imposed by the resolved dependency
+graph — the `icu_*` crates that `url` → `idna` pull in require it — not
+by this project's own code.
 
 ## Run
 
