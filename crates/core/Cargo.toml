@@ -1,0 +1,10 @@
+[package]
+name = "odm-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared domain models and error types for OpenDownloadManager."
+
+[dependencies]
+thiserror = { workspace = true }
+url = { workspace = true }

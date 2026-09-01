@@ -1,0 +1,26 @@
+[package]
+name = "odm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command line interface for OpenDownloadManager."
+
+[[bin]]
+name = "download-manager"
+path = "src/main.rs"
+
+[dependencies]
+odm-core = { path = "../../crates/core" }
+odm-download-engine = { path = "../../crates/download-engine" }
+odm-storage = { path = "../../crates/storage" }
+odm-http-client = { path = "../../crates/http-client" }
+
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+url = { workspace = true }
+indicatif = { workspace = true }
+humantime = { workspace = true }
