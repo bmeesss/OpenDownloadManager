@@ -74,7 +74,7 @@ mod tests {
                 },
                 Exit::Http,
             ),
-        (Error::TooManyRedirects { limit: 10 }, Exit::InvalidArgument),
+            (Error::TooManyRedirects { limit: 10 }, Exit::InvalidArgument),
             (Error::InvalidResponse("x".into()), Exit::InvalidArgument),
             (Error::RangeRequestsUnsupported, Exit::Http),
             (Error::Filesystem("x".into()), Exit::Filesystem),
