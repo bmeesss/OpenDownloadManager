@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 use futures_util::Stream;
-use odm_core::{Error, HttpMethod, Result, ResourceInfo};
+use odm_core::{Error, HttpMethod, ResourceInfo, Result};
 use reqwest::Response;
 use std::pin::Pin;
 use tracing::debug;

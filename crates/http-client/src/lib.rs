@@ -17,4 +17,4 @@ pub use client::HttpClient;
 pub use config::{HttpClientConfig, RedirectPolicy};
 pub use error::HttpClientError;
 pub use inspect::inspect;
-pub use stream::{StreamingResponse, download_stream};
+pub use stream::{download_stream, StreamingResponse};

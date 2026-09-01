@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use odm_core::Error;
 use odm_storage::{
-    FileStorage, ensure_parent_dir, sanitize_filename, validate_filename, validate_output_path,
-    validate_path,
+    ensure_parent_dir, sanitize_filename, validate_filename, validate_output_path, validate_path,
+    FileStorage,
 };
 use tempfile::TempDir;
 
@@ -75,7 +75,10 @@ fn validate_output_path_accepts_relative() {
 #[test]
 fn validate_output_path_rejects_parent_traversal() {
     // Even with absolute paths allowed, escaping the destination is not.
-    let p = PathBuf::from("/home/me").join("..").join("etc").join("passwd");
+    let p = PathBuf::from("/home/me")
+        .join("..")
+        .join("etc")
+        .join("passwd");
     let err = validate_output_path(&p).expect_err("err");
     assert!(matches!(err, Error::InvalidPath(_)), "unexpected: {err}");
 }
@@ -187,10 +190,7 @@ async fn create_and_finalize_part_file() {
     let tmp = TempDir::new().unwrap();
     let final_path = tmp.path().join("output.bin");
     let storage = FileStorage::new();
-    let mut part = storage
-        .create_part_file(&final_path)
-        .await
-        .expect("create");
+    let mut part = storage.create_part_file(&final_path).await.expect("create");
     part.write_chunk(b"hello ").await.unwrap();
     part.write_chunk(b"world").await.unwrap();
     part.flush().await.unwrap();

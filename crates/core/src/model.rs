@@ -93,12 +93,10 @@ impl DownloadProgress {
     /// reporting 100% for it would be a fabrication.
     #[must_use]
     pub fn percent(&self) -> Option<f64> {
-        self.total_bytes
-            .filter(|total| *total > 0)
-            .map(|total| {
-                let pct = (self.downloaded_bytes as f64 / total as f64) * 100.0;
-                pct.clamp(0.0, 100.0)
-            })
+        self.total_bytes.filter(|total| *total > 0).map(|total| {
+            let pct = (self.downloaded_bytes as f64 / total as f64) * 100.0;
+            pct.clamp(0.0, 100.0)
+        })
     }
 }
 

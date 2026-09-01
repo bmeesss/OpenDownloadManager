@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use odm_core::{DownloadProgress, DownloadRequest, Error, ProgressSink};
-use odm_download_engine::{DownloadEngine, DownloadOptions, EngineConfig, default_output_for};
+use odm_download_engine::{default_output_for, DownloadEngine, DownloadOptions, EngineConfig};
 use odm_storage::validate_output_path;
 use tempfile::TempDir;
 use url::Url;
@@ -64,7 +64,12 @@ async fn short_body_is_not_finalized() {
     let url = Url::parse(&format!("http://{addr}/file.bin")).unwrap();
 
     let err = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect_err("a short body must not be accepted");
 
@@ -76,7 +81,11 @@ async fn short_body_is_not_finalized() {
         "unexpected error: {err}"
     );
     assert!(!out.exists(), "the final file must not exist");
-    assert_eq!(part_files(tmp.path()).len(), 1, "the .part must be retained");
+    assert_eq!(
+        part_files(tmp.path()).len(),
+        1,
+        "the .part must be retained"
+    );
 }
 
 #[tokio::test]
@@ -133,7 +142,12 @@ async fn zero_byte_download_succeeds() {
     let url = Url::parse(&format!("{}/empty", server.uri())).unwrap();
 
     let summary = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("a zero-byte body is a valid download");
 
@@ -154,7 +168,12 @@ async fn unknown_content_length_succeeds() {
     let url = Url::parse(&format!("http://{addr}/x")).unwrap();
 
     let summary = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 
@@ -173,7 +192,12 @@ async fn chunked_response_succeeds() {
     let url = Url::parse(&format!("http://{addr}/x")).unwrap();
 
     let summary = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 
@@ -199,12 +223,21 @@ async fn overwrite_false_refuses_existing_file() {
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
     let err = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect_err("must refuse to clobber");
 
     assert!(matches!(err, Error::AlreadyExists(_)), "unexpected: {err}");
-    assert_eq!(std::fs::read(&out).unwrap(), b"old", "original must survive");
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        b"old",
+        "original must survive"
+    );
 }
 
 #[tokio::test]
@@ -248,13 +281,21 @@ async fn no_part_file_remains_after_success() {
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
     make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 
     assert!(out.exists());
     let leftovers = part_files(tmp.path());
-    assert!(leftovers.is_empty(), "leftover partial files: {leftovers:?}");
+    assert!(
+        leftovers.is_empty(),
+        "leftover partial files: {leftovers:?}"
+    );
 
     let entries: Vec<_> = std::fs::read_dir(tmp.path())
         .unwrap()
@@ -285,7 +326,12 @@ async fn absolute_output_path_is_accepted() {
 
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
     make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 
@@ -306,7 +352,11 @@ async fn default_output_path_is_derived_and_used() {
 
     let url = Url::parse(&format!("{}/report.pdf?token=secret", server.uri())).unwrap();
     let derived = default_output_for(&url);
-    assert_eq!(derived, PathBuf::from("report.pdf"), "query must be dropped");
+    assert_eq!(
+        derived,
+        PathBuf::from("report.pdf"),
+        "query must be dropped"
+    );
 
     let tmp = temp_dir();
     let out = tmp.path().join(&derived);
@@ -353,7 +403,10 @@ async fn output_path_with_reserved_name_is_rejected() {
         .await
         .expect_err("reserved device names must be rejected");
 
-    assert!(matches!(err, Error::InvalidFileName(_)), "unexpected: {err}");
+    assert!(
+        matches!(err, Error::InvalidFileName(_)),
+        "unexpected: {err}"
+    );
 }
 
 #[tokio::test]
@@ -449,13 +502,21 @@ async fn http_404_is_reported() {
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
     let err = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect_err("should fail");
 
     assert!(matches!(err, Error::Http { status: 404, .. }));
     assert!(!out.exists());
-    assert!(part_files(tmp.path()).is_empty(), "no partial file for a 404");
+    assert!(
+        part_files(tmp.path()).is_empty(),
+        "no partial file for a 404"
+    );
 }
 
 #[tokio::test]
@@ -515,7 +576,12 @@ async fn output_parent_dir_is_created() {
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
     make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 
@@ -615,7 +681,12 @@ async fn large_body_is_written_intact() {
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
     let summary = make_engine()
-        .download(&request(url, out.clone()), &DownloadOptions::default(), None, None)
+        .download(
+            &request(url, out.clone()),
+            &DownloadOptions::default(),
+            None,
+            None,
+        )
         .await
         .expect("download");
 

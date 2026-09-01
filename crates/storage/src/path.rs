@@ -59,7 +59,9 @@ pub enum InvalidFileNameReason {
 /// Returns [`Error::InvalidPath`] describing the first violation.
 pub fn validate_path(path: &Path) -> Result<()> {
     if path.as_os_str().is_empty() {
-        return Err(Error::InvalidPath(reason_str_path(InvalidPathReason::Empty)));
+        return Err(Error::InvalidPath(reason_str_path(
+            InvalidPathReason::Empty,
+        )));
     }
     if path.as_os_str().as_encoded_bytes().contains(&0) {
         return Err(Error::InvalidPath(reason_str_path(
@@ -113,7 +115,9 @@ pub fn validate_path(path: &Path) -> Result<()> {
 /// the first violation.
 pub fn validate_output_path(path: &Path) -> Result<()> {
     if path.as_os_str().is_empty() {
-        return Err(Error::InvalidPath(reason_str_path(InvalidPathReason::Empty)));
+        return Err(Error::InvalidPath(reason_str_path(
+            InvalidPathReason::Empty,
+        )));
     }
     if path.as_os_str().as_encoded_bytes().contains(&0) {
         return Err(Error::InvalidPath(reason_str_path(
@@ -145,10 +149,9 @@ pub fn validate_output_path(path: &Path) -> Result<()> {
         )));
     }
 
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::InvalidFileName("output path has no usable final component".into()))?;
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+        Error::InvalidFileName("output path has no usable final component".into())
+    })?;
 
     validate_filename(name)?;
 
@@ -217,8 +220,17 @@ pub fn validate_filename(name: &str) -> Result<()> {
 pub fn sanitize_filename(name: &str) -> String {
     let mut buf = String::with_capacity(name.len());
     for c in name.chars() {
-        if c.is_control() || c == '/' || c == '\\' || c == '\0' || c == ':' || c == '*'
-            || c == '?' || c == '"' || c == '<' || c == '>' || c == '|'
+        if c.is_control()
+            || c == '/'
+            || c == '\\'
+            || c == '\0'
+            || c == ':'
+            || c == '*'
+            || c == '?'
+            || c == '"'
+            || c == '<'
+            || c == '>'
+            || c == '|'
         {
             buf.push('_');
         } else {

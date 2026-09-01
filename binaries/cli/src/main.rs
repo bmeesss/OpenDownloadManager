@@ -49,8 +49,8 @@ fn init_tracing(verbose: u8, quiet: bool, has_progress: bool) {
             _ => "trace",
         }
     };
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     let filter = if has_progress && verbose == 0 && !quiet {
         EnvFilter::new("warn,odm_download_engine=info,odm_http_client=warn,odm_storage=warn")

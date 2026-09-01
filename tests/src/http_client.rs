@@ -1,7 +1,7 @@
 //! HTTP client tests against a local mock server.
 
 use odm_core::Error;
-use odm_http_client::{HttpClient, HttpClientConfig, download_stream, inspect};
+use odm_http_client::{download_stream, inspect, HttpClient, HttpClientConfig};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -17,7 +17,10 @@ async fn default_client_builds() {
     // as a compile error rather than a surprise at runtime.
     let c = client();
     assert!(c.config().request_timeout.is_zero(), "no whole-request cap");
-    assert!(!c.config().connect_timeout.is_zero(), "connect must be capped");
+    assert!(
+        !c.config().connect_timeout.is_zero(),
+        "connect must be capped"
+    );
 }
 
 #[tokio::test]
@@ -44,7 +47,10 @@ async fn inspect_returns_metadata() {
     assert_eq!(info.status, 200);
     assert_eq!(info.resource.content_length, Some(12345));
     assert_eq!(info.resource.etag.as_deref(), Some("\"abc\""));
-    assert_eq!(info.resource.suggested_filename.as_deref(), Some("hello.bin"));
+    assert_eq!(
+        info.resource.suggested_filename.as_deref(),
+        Some("hello.bin")
+    );
     assert!(info.resource.accepts_ranges);
 }
 

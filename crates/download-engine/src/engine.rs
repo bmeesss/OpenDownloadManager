@@ -6,8 +6,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use futures_util::StreamExt;
 use odm_core::{DownloadProgress, DownloadRequest, DownloadSummary, Error, ProgressSink, Result};
-use odm_http_client::{HttpClient, HttpClientConfig, download_stream};
-use odm_storage::{FileStorage, ensure_parent_dir, validate_output_path};
+use odm_http_client::{download_stream, HttpClient, HttpClientConfig};
+use odm_storage::{ensure_parent_dir, validate_output_path, FileStorage};
 use tokio::sync::Notify;
 use tracing::{info, warn};
 
@@ -238,10 +238,7 @@ mod tests {
             overwrite: false,
             max_redirects: 10,
         };
-        assert!(matches!(
-            validate_request(&req),
-            Err(Error::InvalidUrl(_))
-        ));
+        assert!(matches!(validate_request(&req), Err(Error::InvalidUrl(_))));
     }
 
     #[test]
@@ -252,9 +249,6 @@ mod tests {
             overwrite: false,
             max_redirects: 0,
         };
-        assert!(matches!(
-            validate_request(&req),
-            Err(Error::InvalidUrl(_))
-        ));
+        assert!(matches!(validate_request(&req), Err(Error::InvalidUrl(_))));
     }
 }
