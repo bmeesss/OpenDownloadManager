@@ -56,7 +56,7 @@ async fn short_body_is_not_finalized() {
     let mut response = b"HTTP/1.1 200 OK\r\n".to_vec();
     response.extend_from_slice(b"Content-Length: 100\r\n");
     response.extend_from_slice(b"Connection: close\r\n\r\n");
-    response.extend_from_slice(&vec![b'a'; 50]);
+    response.extend_from_slice(&[b'a'; 50]);
 
     let addr = serve_once(response).await;
     let tmp = temp_dir();

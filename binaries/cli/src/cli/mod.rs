@@ -1,6 +1,6 @@
 //! CLI argument parsing.
 
-mod download;
+pub mod download;
 
 pub use download::DownloadCmd;
 

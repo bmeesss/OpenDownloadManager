@@ -93,7 +93,7 @@ async fn http_error_status_propagates() {
 
     let c = client();
     let url = url::Url::parse(&format!("{}/x", server.uri())).unwrap();
-    let err = download_stream(&c, &url).await.expect_err("err");
+    let err = download_stream(&c, &url).await.err().expect("err");
 
     assert!(matches!(err, Error::Http { status: 500, .. }));
 }
@@ -102,7 +102,7 @@ async fn http_error_status_propagates() {
 async fn rejects_non_http_scheme() {
     let c = client();
     let url = url::Url::parse("ftp://example.com/x").unwrap();
-    let err = download_stream(&c, &url).await.expect_err("err");
+    let err = download_stream(&c, &url).await.err().expect("err");
 
     assert!(matches!(err, Error::InvalidUrl(_)));
 }
