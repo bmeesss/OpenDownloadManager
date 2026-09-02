@@ -7,5 +7,7 @@
 #![warn(missing_docs)]
 
 mod engine;
+mod naming;
 
 pub use engine::{DownloadEngine, DownloadOptions, EngineConfig};
+pub use naming::default_output_for;

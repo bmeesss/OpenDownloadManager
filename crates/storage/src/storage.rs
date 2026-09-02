@@ -33,7 +33,10 @@ impl PartFileHandle {
         self.bytes_written
     }
 
-    /// Writes a chunk to the partial file and flushes the buffer.
+    /// Writes a chunk to the partial file.
+    ///
+    /// Data is buffered in memory; it only reaches the operating system
+    /// once the buffer fills or [`Self::flush`] is called.
     ///
     /// # Errors
     /// Returns [`Error::Filesystem`] on I/O failure.
@@ -126,15 +129,24 @@ impl FileStorage {
         })
     }
 
-    /// Atomically renames the partial file to its final path. If the
-    /// rename fails, the partial file is left in place for inspection
-    /// and the error is returned unchanged.
+    /// Atomically renames the partial file to its final path.
+    ///
+    /// When `overwrite` is `false` and something already exists at
+    /// `final_path`, the rename is refused and the partial file is left in
+    /// place for inspection. When it is `true` the existing file is
+    /// replaced by the rename itself, which is atomic on both Unix and
+    /// Windows.
     ///
     /// # Errors
     /// Returns [`Error::Filesystem`] or [`Error::AlreadyExists`].
-    pub async fn finalize(&self, part: PartFileHandle, final_path: &Path) -> Result<()> {
+    pub async fn finalize(
+        &self,
+        part: PartFileHandle,
+        final_path: &Path,
+        overwrite: bool,
+    ) -> Result<()> {
         let part_path = part.close().await?;
-        if tokio::fs::try_exists(final_path).await.unwrap_or(false) {
+        if !overwrite && tokio::fs::try_exists(final_path).await.unwrap_or(false) {
             return Err(Error::AlreadyExists(final_path.display().to_string()));
         }
         tokio::fs::rename(&part_path, final_path)

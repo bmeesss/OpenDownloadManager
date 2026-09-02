@@ -9,15 +9,12 @@ description = "HTTP client used by the OpenDownloadManager download engine."
 odm-core = { path = "../core" }
 
 reqwest = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 futures-util = { workspace = true }
 bytes = { workspace = true }
-http = { workspace = true }
-async-trait = { workspace = true }
-async-stream = "0.3"
+async-stream = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

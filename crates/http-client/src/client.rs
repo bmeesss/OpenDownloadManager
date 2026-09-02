@@ -6,7 +6,7 @@ use reqwest::redirect::Policy;
 use reqwest::{Client, ClientBuilder};
 use tracing::debug;
 
-use crate::config::HttpClientConfig;
+use crate::config::{HttpClientConfig, RedirectPolicy};
 
 /// HTTP client used by the download engine.
 #[derive(Debug, Clone)]
@@ -25,29 +25,26 @@ impl HttpClient {
         let mut builder = ClientBuilder::new()
             .user_agent(&config.user_agent)
             .connect_timeout(config.connect_timeout)
-            .cookie_store(false)
-            .http2_adaptive_window(true)
+            // Load *both* root certificate sources: the bundled (webpki)
+            // roots, enabled by the `rustls-tls` feature, and the operating
+            // system's roots, enabled by `rustls-tls-native-roots`.
+            // Certificate validation is always on; nothing in this crate
+            // ever calls `danger_accept_invalid_certs`.
             .tls_built_in_root_certs(true)
-            .tls_native_roots(true);
+            // Multiplex concurrent requests over one HTTP/2 connection where
+            // the server negotiates it via ALPN.
+            .http2_adaptive_window(true);
 
         if config.request_timeout > Duration::ZERO {
             builder = builder.timeout(config.request_timeout);
         }
 
-        if !config.accept_encoding {
-            builder = builder.no_gzip().no_brotli().no_deflate();
-        }
-
-        let inner = match config.redirect_policy {
-            crate::config::RedirectPolicy::Limited { max } => {
-                builder = builder.redirect(Policy::limited(max));
-                builder.build()?
-            }
-            crate::config::RedirectPolicy::None => {
-                builder = builder.redirect(Policy::none());
-                builder.build()?
-            }
+        let policy = match config.redirect_policy {
+            RedirectPolicy::Limited { max } => Policy::limited(max),
+            RedirectPolicy::None => Policy::none(),
         };
+
+        let inner = builder.redirect(policy).build()?;
 
         debug!(user_agent = %config.user_agent, "HTTP client initialized");
         Ok(Self { inner, config })

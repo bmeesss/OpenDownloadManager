@@ -13,10 +13,7 @@ odm-http-client = { path = "../crates/http-client" }
 odm-storage = { path = "../crates/storage" }
 
 tokio = { workspace = true }
-reqwest = { workspace = true }
 wiremock = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }
-bytes = { workspace = true }
 futures-util = { workspace = true }
-anyhow = { workspace = true }

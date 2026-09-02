@@ -1,12 +1,26 @@
 //! HTTP client tests against a local mock server.
 
-use odm_core::{Error, HttpMethod};
-use odm_http_client::{HttpClient, HttpClientConfig, download_stream, inspect};
+use odm_core::Error;
+use odm_http_client::{download_stream, inspect, HttpClient, HttpClientConfig};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn client() -> HttpClient {
     HttpClient::new(HttpClientConfig::default()).expect("client")
+}
+
+#[tokio::test]
+async fn default_client_builds() {
+    // Exercises the whole `reqwest` builder configuration: rustls with both
+    // bundled and native root certificates, HTTP/2, the redirect policy and
+    // the connect timeout. A feature mismatch in the manifest shows up here
+    // as a compile error rather than a surprise at runtime.
+    let c = client();
+    assert!(c.config().request_timeout.is_zero(), "no whole-request cap");
+    assert!(
+        !c.config().connect_timeout.is_zero(),
+        "connect must be capped"
+    );
 }
 
 #[tokio::test]
@@ -21,10 +35,7 @@ async fn inspect_returns_metadata() {
                 .insert_header("ETag", "\"abc\"")
                 .insert_header("Last-Modified", "Wed, 21 Oct 2026 07:28:00 GMT")
                 .insert_header("Accept-Ranges", "bytes")
-                .insert_header(
-                    "Content-Disposition",
-                    "attachment; filename=\"hello.bin\"",
-                ),
+                .insert_header("Content-Disposition", "attachment; filename=\"hello.bin\""),
         )
         .mount(&server)
         .await;
@@ -32,10 +43,14 @@ async fn inspect_returns_metadata() {
     let c = client();
     let url = url::Url::parse(&format!("{}/file.bin", server.uri())).unwrap();
     let info = inspect(&c, &url).await.expect("inspect");
+
     assert_eq!(info.status, 200);
     assert_eq!(info.resource.content_length, Some(12345));
     assert_eq!(info.resource.etag.as_deref(), Some("\"abc\""));
-    assert_eq!(info.resource.suggested_filename.as_deref(), Some("hello.bin"));
+    assert_eq!(
+        info.resource.suggested_filename.as_deref(),
+        Some("hello.bin")
+    );
     assert!(info.resource.accepts_ranges);
 }
 
@@ -56,17 +71,16 @@ async fn download_stream_yields_bytes() {
     let c = client();
     let url = url::Url::parse(&format!("{}/x", server.uri())).unwrap();
     let resp = download_stream(&c, &url).await.expect("stream");
-    let mut total = 0u64;
-    let mut collected = Vec::new();
+
     use futures_util::StreamExt;
     let mut s = resp.body;
+    let mut collected = Vec::new();
     while let Some(chunk) = s.next().await {
-        let chunk = chunk.expect("chunk");
-        total += chunk.len() as u64;
-        collected.extend_from_slice(&chunk);
+        collected.extend_from_slice(&chunk.expect("chunk"));
     }
-    assert_eq!(total as usize, body.len());
+
     assert_eq!(collected, body);
+    assert_eq!(resp.resource.content_length, Some(body.len() as u64));
 }
 
 #[tokio::test]
@@ -76,9 +90,11 @@ async fn http_error_status_propagates() {
         .respond_with(ResponseTemplate::new(500))
         .mount(&server)
         .await;
+
     let c = client();
     let url = url::Url::parse(&format!("{}/x", server.uri())).unwrap();
     let err = download_stream(&c, &url).await.expect_err("err");
+
     assert!(matches!(err, Error::Http { status: 500, .. }));
 }
 
@@ -87,6 +103,15 @@ async fn rejects_non_http_scheme() {
     let c = client();
     let url = url::Url::parse("ftp://example.com/x").unwrap();
     let err = download_stream(&c, &url).await.expect_err("err");
+
     assert!(matches!(err, Error::InvalidUrl(_)));
-    let _ = HttpMethod::Head;
+}
+
+#[tokio::test]
+async fn rejects_non_http_scheme_on_inspect() {
+    let c = client();
+    let url = url::Url::parse("file:///etc/passwd").unwrap();
+    let err = inspect(&c, &url).await.expect_err("err");
+
+    assert!(matches!(err, Error::InvalidUrl(_)));
 }
