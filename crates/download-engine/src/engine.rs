@@ -19,18 +19,10 @@ pub struct DownloadOptions {
 }
 
 /// Top-level engine configuration.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EngineConfig {
     /// HTTP client configuration.
     pub http: HttpClientConfig,
-}
-
-impl Default for EngineConfig {
-    fn default() -> Self {
-        Self {
-            http: HttpClientConfig::default(),
-        }
-    }
 }
 
 /// The download engine.

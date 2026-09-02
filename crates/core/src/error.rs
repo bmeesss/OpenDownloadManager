@@ -9,7 +9,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 ///
 /// Each variant carries enough context for callers to make decisions
 /// and to be translated into CLI exit codes or GUI error dialogs.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum Error {
     /// A URL could not be parsed or did not use an accepted scheme.
     #[error("invalid URL: {0}")]

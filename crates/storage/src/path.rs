@@ -237,7 +237,11 @@ pub fn sanitize_filename(name: &str) -> String {
             buf.push(c);
         }
     }
-    let trimmed = buf.trim_matches([' ', '.']).to_string();
+    // Only trailing dots and spaces are trimmed: Windows strips them from
+    // file names, so a portable name must not end with one. Leading dots are
+    // preserved (".gitignore" stays ".gitignore"); a name that is *all*
+    // dots/spaces collapses to empty and falls through to the fallback below.
+    let trimmed = buf.trim_end_matches([' ', '.']).to_string();
     if trimmed.is_empty() {
         "download.bin".to_string()
     } else if validate_filename(&trimmed).is_ok() {
