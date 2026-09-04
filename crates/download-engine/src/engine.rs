@@ -5,17 +5,39 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use futures_util::StreamExt;
-use odm_core::{DownloadProgress, DownloadRequest, DownloadSummary, Error, ProgressSink, Result};
+use odm_core::{
+    DownloadProgress, DownloadRequest, DownloadSummary, Error, ProgressSink, RateLimiter, Result,
+};
 use odm_http_client::{download_stream, HttpClient, HttpClientConfig};
 use odm_storage::{ensure_parent_dir, validate_output_path, FileStorage};
 use tokio::sync::Notify;
 use tracing::{info, warn};
 
 /// Options that control a single download.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone)]
 pub struct DownloadOptions {
     /// Whether to overwrite an existing file at the target path.
     pub overwrite: bool,
+    /// Optional byte-rate limiter applied to the transfer.
+    pub rate_limiter: Option<Arc<dyn RateLimiter>>,
+}
+
+impl Default for DownloadOptions {
+    fn default() -> Self {
+        Self {
+            overwrite: false,
+            rate_limiter: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for DownloadOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadOptions")
+            .field("overwrite", &self.overwrite)
+            .field("rate_limiter", &self.rate_limiter.is_some())
+            .finish()
+    }
 }
 
 /// Top-level engine configuration.
@@ -92,6 +114,9 @@ impl DownloadEngine {
             let chunk = chunk?;
             if chunk.is_empty() {
                 continue;
+            }
+            if let Some(rl) = &opts.rate_limiter {
+                rl.acquire(chunk.len() as u64).await;
             }
             part.write_chunk(&chunk).await?;
             downloaded = downloaded.saturating_add(chunk.len() as u64);

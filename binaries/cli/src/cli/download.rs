@@ -52,9 +52,7 @@ pub async fn run(cmd: DownloadCmd) -> anyhow::Result<()> {
     let engine = DownloadEngine::new(EngineConfig::default())
         .map_err(|e| anyhow::anyhow!(Error::Internal(format!("engine init: {e}"))))?;
 
-    let opts = DownloadOptions {
-        overwrite: cmd.overwrite,
-    };
+    let opts = DownloadOptions { overwrite: cmd.overwrite, rate_limiter: None };
 
     let reporter = Arc::new(ProgressReporter::new(request.output.display().to_string()));
 

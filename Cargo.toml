@@ -17,6 +17,10 @@ description = "OpenDownloadManager: a free and open-source desktop download mana
 
 [workspace.dependencies]
 tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
 # Built without the `gzip`/`brotli`/`deflate` features on purpose: responses are
 # never transparently decoded, so the bytes on disk are exactly the bytes the
 # server sent and `Content-Length` always describes the file.

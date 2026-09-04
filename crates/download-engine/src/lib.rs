@@ -6,6 +6,7 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
+mod backend;
 mod engine;
 mod naming;
 

@@ -8,3 +8,8 @@ description = "Shared domain models and error types for OpenDownloadManager."
 [dependencies]
 thiserror = { workspace = true }
 url = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
