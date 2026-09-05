@@ -90,7 +90,9 @@ impl Persistence {
     /// migration fails.
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path).map_err(db_err)?;
-        let p = Self { conn: Mutex::new(conn) };
+        let p = Self {
+            conn: Mutex::new(conn),
+        };
         p.migrate()?;
         Ok(p)
     }
@@ -101,7 +103,7 @@ impl Persistence {
     /// Returns an [`Error::Internal`] on a database failure.
     pub fn save(&self, dl: &Download) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-            conn.execute(
+        conn.execute(
             "INSERT OR REPLACE INTO downloads \
              (id, url, destination, backend, state, overwrite, total_bytes, downloaded_bytes, \
               error, created_at, updated_at, started_at, completed_at, backend_meta) \
@@ -174,8 +176,11 @@ impl Persistence {
     /// Returns an [`Error::Internal`] on a database failure.
     pub fn remove(&self, id: DownloadId) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM downloads WHERE id = ?1", params![id.to_string()])
-            .map_err(db_err)?;
+        conn.execute(
+            "DELETE FROM downloads WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(db_err)?;
         Ok(())
     }
 

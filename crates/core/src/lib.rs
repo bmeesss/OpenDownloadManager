@@ -21,16 +21,11 @@ mod events;
 mod model;
 mod state;
 
-pub use backend::{ Backend, BackendKind, BackendOutcome, BackendTask, DownloadId, RateLimiter };
-pub use error::{ Error, Result };
+pub use backend::{Backend, BackendKind, BackendOutcome, BackendTask, DownloadId, RateLimiter};
+pub use error::{Error, Result};
 pub use events::Event;
 pub use model::{
-    DownloadProgress,
-    DownloadRequest,
-    DownloadSummary,
-    HttpMethod,
-    InspectInfo,
-    ProgressSink,
+    DownloadProgress, DownloadRequest, DownloadSummary, HttpMethod, InspectInfo, ProgressSink,
     ResourceInfo,
 };
 pub use state::DownloadState;

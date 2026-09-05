@@ -6,16 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use odm_core::{
-    Backend,
-    BackendKind,
-    BackendTask,
-    DownloadId,
-    DownloadProgress,
-    DownloadState,
-    Error,
-    Event,
-    ProgressSink,
-    Result,
+    Backend, BackendKind, BackendTask, DownloadId, DownloadProgress, DownloadState, Error, Event,
+    ProgressSink, Result,
 };
 use serde_json::Value;
 use tokio::sync::Notify;
@@ -75,7 +67,11 @@ struct ManagedDownload {
 
 impl ManagedDownload {
     fn new(info: Download) -> Self {
-        Self { info, cancel: None, handle: None }
+        Self {
+            info,
+            cancel: None,
+            handle: None,
+        }
     }
 }
 
@@ -383,7 +379,10 @@ impl DownloadManager {
             .unwrap()
             .values()
             .filter(|md| {
-                matches!(md.info.state, DownloadState::Starting | DownloadState::Downloading)
+                matches!(
+                    md.info.state,
+                    DownloadState::Starting | DownloadState::Downloading
+                )
             })
             .count()
     }
@@ -412,7 +411,10 @@ impl DownloadManager {
     }
 
     fn begin_download(&self, id: DownloadId) {
-        if self.transition_state(id, DownloadState::Starting, None).is_err() {
+        if self
+            .transition_state(id, DownloadState::Starting, None)
+            .is_err()
+        {
             return;
         }
         self.inner.events.publish(Event::Started(id));
@@ -423,7 +425,9 @@ impl DownloadManager {
                 md.cancel = Some(cancel.clone());
             }
         }
-        let mgr = DownloadManager { inner: self.inner.clone() };
+        let mgr = DownloadManager {
+            inner: self.inner.clone(),
+        };
         let handle = tokio::spawn(async move { mgr.run_download(id, cancel).await });
         {
             let mut g = self.inner.downloads.lock().unwrap();
@@ -482,7 +486,9 @@ impl DownloadManager {
         if let Some(dl) = dl {
             self.inner.persistence.save(&dl)?;
         }
-        self.inner.events.publish(Event::StateChanged { id, from, to });
+        self.inner
+            .events
+            .publish(Event::StateChanged { id, from, to });
         Ok(())
     }
 
@@ -510,7 +516,9 @@ impl DownloadManager {
         };
         let _ = self.inner.persistence.save(&dl);
         if let Some((from, to)) = state_changed {
-            self.inner.events.publish(Event::StateChanged { id, from, to });
+            self.inner
+                .events
+                .publish(Event::StateChanged { id, from, to });
         }
         self.inner.events.publish(Event::Progress {
             id,
@@ -546,10 +554,12 @@ impl DownloadManager {
             destination: dl.destination.clone(),
             overwrite: dl.overwrite,
             backend_meta: dl.backend_meta.clone(),
-                progress: Some(Arc::new(ManagerProgressSink {
-                    mgr: DownloadManager { inner: self.inner.clone() },
-                    id,
-                })),
+            progress: Some(Arc::new(ManagerProgressSink {
+                mgr: DownloadManager {
+                    inner: self.inner.clone(),
+                },
+                id,
+            })),
             cancel: Some(cancel.clone()),
             rate_limiter: rate,
         };
@@ -640,7 +650,9 @@ impl DownloadManager {
                     let to = d.state;
                     let id = d.id;
                     self.inner.persistence.save(&d)?;
-                    self.inner.events.publish(Event::StateChanged { id, from, to });
+                    self.inner
+                        .events
+                        .publish(Event::StateChanged { id, from, to });
                     if to == DownloadState::Failed {
                         let err = d.error.clone().unwrap_or_default();
                         self.inner.events.publish(Event::Failed { id, error: err });
@@ -753,7 +765,10 @@ mod tests {
 
     fn manager(delay: Duration, fail: bool, limit: usize) -> (DownloadManager, TempDir) {
         let (_dir, path) = tmp_db();
-        let cfg = ManagerConfig { max_concurrent_downloads: limit, ..ManagerConfig::default() };
+        let cfg = ManagerConfig {
+            max_concurrent_downloads: limit,
+            ..ManagerConfig::default()
+        };
         let backend: Arc<dyn Backend> = Arc::new(FakeBackend::new(delay, fail));
         let mgr = DownloadManager::open(cfg, &path, vec![backend]).unwrap();
         (mgr, _dir)
@@ -795,7 +810,12 @@ mod tests {
         let active = mgr
             .list()
             .iter()
-            .filter(|d| matches!(d.state, DownloadState::Starting | DownloadState::Downloading))
+            .filter(|d| {
+                matches!(
+                    d.state,
+                    DownloadState::Starting | DownloadState::Downloading
+                )
+            })
             .count();
         assert_eq!(active, 2, "exactly the concurrency limit should be active");
         let queued = mgr
@@ -937,7 +957,10 @@ mod tests {
             .list()
             .iter()
             .find(|d| d.error.as_deref() == Some("interrupted by manager restart"));
-        assert!(interrupted.is_some(), "in-flight download must be recovered");
+        assert!(
+            interrupted.is_some(),
+            "in-flight download must be recovered"
+        );
         assert!(
             mgr.list()
                 .iter()

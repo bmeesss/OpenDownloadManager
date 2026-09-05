@@ -127,26 +127,58 @@ mod tests {
 
     #[test]
     fn valid_transitions_are_allowed() {
-        assert!(DownloadState::Queued.transition(DownloadState::Starting).is_ok());
-        assert!(DownloadState::Starting.transition(DownloadState::Downloading).is_ok());
-        assert!(DownloadState::Downloading.transition(DownloadState::Paused).is_ok());
-        assert!(DownloadState::Paused.transition(DownloadState::Queued).is_ok());
-        assert!(DownloadState::Downloading.transition(DownloadState::Completed).is_ok());
-        assert!(DownloadState::Starting.transition(DownloadState::Completed).is_ok());
-        assert!(DownloadState::Starting.transition(DownloadState::Failed).is_ok());
-        assert!(DownloadState::Failed.transition(DownloadState::Queued).is_ok());
-        assert!(DownloadState::Queued.transition(DownloadState::Cancelled).is_ok());
-        assert!(DownloadState::Paused.transition(DownloadState::Cancelled).is_ok());
+        assert!(DownloadState::Queued
+            .transition(DownloadState::Starting)
+            .is_ok());
+        assert!(DownloadState::Starting
+            .transition(DownloadState::Downloading)
+            .is_ok());
+        assert!(DownloadState::Downloading
+            .transition(DownloadState::Paused)
+            .is_ok());
+        assert!(DownloadState::Paused
+            .transition(DownloadState::Queued)
+            .is_ok());
+        assert!(DownloadState::Downloading
+            .transition(DownloadState::Completed)
+            .is_ok());
+        assert!(DownloadState::Starting
+            .transition(DownloadState::Completed)
+            .is_ok());
+        assert!(DownloadState::Starting
+            .transition(DownloadState::Failed)
+            .is_ok());
+        assert!(DownloadState::Failed
+            .transition(DownloadState::Queued)
+            .is_ok());
+        assert!(DownloadState::Queued
+            .transition(DownloadState::Cancelled)
+            .is_ok());
+        assert!(DownloadState::Paused
+            .transition(DownloadState::Cancelled)
+            .is_ok());
     }
 
     #[test]
     fn invalid_transitions_are_rejected() {
-        assert!(DownloadState::Completed.transition(DownloadState::Downloading).is_err());
-        assert!(DownloadState::Cancelled.transition(DownloadState::Queued).is_err());
-        assert!(DownloadState::Paused.transition(DownloadState::Downloading).is_err());
-        assert!(DownloadState::Queued.transition(DownloadState::Completed).is_err());
-        assert!(DownloadState::Downloading.transition(DownloadState::Queued).is_err());
-        assert!(DownloadState::Completed.transition(DownloadState::Failed).is_err());
+        assert!(DownloadState::Completed
+            .transition(DownloadState::Downloading)
+            .is_err());
+        assert!(DownloadState::Cancelled
+            .transition(DownloadState::Queued)
+            .is_err());
+        assert!(DownloadState::Paused
+            .transition(DownloadState::Downloading)
+            .is_err());
+        assert!(DownloadState::Queued
+            .transition(DownloadState::Completed)
+            .is_err());
+        assert!(DownloadState::Downloading
+            .transition(DownloadState::Queued)
+            .is_err());
+        assert!(DownloadState::Completed
+            .transition(DownloadState::Failed)
+            .is_err());
     }
 
     #[test]

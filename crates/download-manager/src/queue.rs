@@ -18,7 +18,9 @@ impl Queue {
     /// Creates an empty queue.
     #[must_use]
     pub fn new() -> Self {
-        Self { order: VecDeque::new() }
+        Self {
+            order: VecDeque::new(),
+        }
     }
 
     /// Appends `id` to the back of the queue.

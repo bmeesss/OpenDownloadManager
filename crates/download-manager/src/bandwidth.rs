@@ -20,7 +20,9 @@ impl BandwidthPolicy {
     /// A policy with no bandwidth limit.
     #[must_use]
     pub fn unlimited() -> Self {
-        Self { max_bytes_per_sec: None }
+        Self {
+            max_bytes_per_sec: None,
+        }
     }
 
     /// A policy capped at `max_bytes_per_sec` (a cap of `0` means unlimited).

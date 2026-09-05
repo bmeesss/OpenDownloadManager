@@ -15,8 +15,8 @@ use core::fmt;
 use core::str::FromStr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
-use uuid::Uuid;
 use url::Url;
+use uuid::Uuid;
 
 use crate::{Error, ProgressSink, Result};
 

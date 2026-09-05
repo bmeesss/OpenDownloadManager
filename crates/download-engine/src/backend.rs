@@ -6,13 +6,7 @@
 
 use async_trait::async_trait;
 use odm_core::{
-    Backend,
-    BackendKind,
-    BackendOutcome,
-    BackendTask,
-    DownloadOptions,
-    DownloadRequest,
-    Result,
+    Backend, BackendKind, BackendOutcome, BackendTask, DownloadOptions, DownloadRequest, Result,
 };
 
 use crate::engine::DownloadEngine;
@@ -33,7 +27,10 @@ impl Backend for DownloadEngine {
             overwrite: task.overwrite,
             max_redirects: DEFAULT_MAX_REDIRECTS,
         };
-        let options = DownloadOptions { overwrite: task.overwrite, rate_limiter: task.rate_limiter };
+        let options = DownloadOptions {
+            overwrite: task.overwrite,
+            rate_limiter: task.rate_limiter,
+        };
 
         let summary = self
             .download(&request, &options, task.progress, task.cancel)
