@@ -1,0 +1,24 @@
+[package]
+name = "odm-torrent-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BitTorrent backend for OpenDownloadManager."
+
+[dependencies]
+odm-core = { path = "../core" }
+odm-download-manager = { path = "../download-manager" }
+odm-storage = { path = "../storage" }
+librqbit = "9.0.1"
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+async-trait = { workspace = true }
+hex = { version = "0.4" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

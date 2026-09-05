@@ -196,6 +196,21 @@ pub fn validate_filename(name: &str) -> Result<()> {
             reason_str_file(InvalidFileNameReason::PathSeparator)
         )));
     }
+    if name.ends_with([' ', '.']) {
+        return Err(Error::InvalidFileName(format!(
+            "{}: trailing dot or space",
+            reason_str_file(InvalidFileNameReason::ReservedName)
+        )));
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+    {
+        return Err(Error::InvalidFileName(format!(
+            "{}: unsafe Windows character",
+            reason_str_file(InvalidFileNameReason::ReservedName)
+        )));
+    }
     for c in name.chars() {
         if c.is_control() {
             return Err(Error::InvalidFileName(format!(
@@ -204,7 +219,6 @@ pub fn validate_filename(name: &str) -> Result<()> {
             )));
         }
     }
-    #[cfg(windows)]
     if is_windows_reserved_name(name) {
         return Err(Error::InvalidFileName(format!(
             "{}: reserved Windows name",
@@ -328,5 +342,16 @@ fn reason_str_file(r: InvalidFileNameReason) -> &'static str {
         InvalidFileNameReason::NulByte => "nul",
         InvalidFileNameReason::PathSeparator => "separator",
         InvalidFileNameReason::TooLong => "toolong",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_filename;
+
+    #[test]
+    fn rejects_windows_reserved_names_on_every_platform() {
+        assert!(validate_filename("CON.txt").is_err());
+        assert!(validate_filename("LPT1").is_err());
     }
 }

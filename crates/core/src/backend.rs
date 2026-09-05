@@ -30,12 +30,15 @@ use crate::{Error, ProgressSink, Result};
 pub enum BackendKind {
     /// HTTP/HTTPS transfers executed by `odm-download-engine`.
     Http,
+    /// BitTorrent transfers executed by `odm-torrent-backend`.
+    Torrent,
 }
 
 impl fmt::Display for BackendKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BackendKind::Http => f.write_str("http"),
+            BackendKind::Torrent => f.write_str("torrent"),
         }
     }
 }
@@ -50,6 +53,7 @@ impl FromStr for BackendKind {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "http" => Ok(BackendKind::Http),
+            "torrent" => Ok(BackendKind::Torrent),
             other => Err(Error::Internal(format!("unknown backend kind: {other}"))),
         }
     }
@@ -107,6 +111,13 @@ pub trait RateLimiter: Send + Sync + 'static {
     /// Waits until `bytes` units of capacity are available and then consumes
     /// them.
     async fn acquire(&self, bytes: u64);
+
+    /// Returns the configured maximum bytes per second, or `None` if
+    /// unlimited.
+    #[must_use]
+    fn max_bytes_per_sec(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Everything a backend needs to execute one download, handed to it by the
@@ -131,6 +142,14 @@ pub struct BackendTask {
     pub cancel: Option<Arc<Notify>>,
     /// Optional byte-rate limiter applied to the transfer.
     pub rate_limiter: Option<Arc<dyn RateLimiter>>,
+    /// Signal to dispose of transfer data when the download is removed.
+    /// Once notified the backend must stop and clean up any files it owns,
+    /// then return [`Error::Cancelled`] promptly.
+    pub dispose: Option<Arc<Notify>>,
+    /// Global bandwidth cap in bytes per second, or `None` for unlimited.
+    /// The backend should apply this at the session or connection level
+    /// rather than per-chunk.
+    pub global_max_bytes_per_sec: Option<u64>,
 }
 
 /// The result a backend reports when a transfer ends.
@@ -169,7 +188,12 @@ mod tests {
     #[test]
     fn backend_kind_round_trips() {
         assert_eq!("http".parse::<BackendKind>().unwrap(), BackendKind::Http);
+        assert_eq!(
+            "torrent".parse::<BackendKind>().unwrap(),
+            BackendKind::Torrent
+        );
         assert_eq!(BackendKind::Http.to_string(), "http");
+        assert_eq!(BackendKind::Torrent.to_string(), "torrent");
         assert!("ftp".parse::<BackendKind>().is_err());
     }
 

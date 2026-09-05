@@ -62,6 +62,7 @@ impl DownloadSpec {
 struct ManagedDownload {
     info: Download,
     cancel: Option<Arc<Notify>>,
+    dispose: Option<Arc<Notify>>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -70,6 +71,7 @@ impl ManagedDownload {
         Self {
             info,
             cancel: None,
+            dispose: None,
             handle: None,
         }
     }
@@ -312,19 +314,20 @@ impl DownloadManager {
     /// Removes a download from the manager and the database. A running
     /// transfer is signalled to stop first.
     ///
+    /// Unlike [`cancel`], this also signals the backend that transfer data
+    /// should be disposed.
+    ///
     /// # Errors
     /// Returns an [`Error::Internal`] if persistence fails.
     pub fn remove(&self, id: DownloadId) -> Result<()> {
-        let cancel = self
-            .inner
-            .downloads
-            .lock()
-            .unwrap()
-            .get(&id)
-            .and_then(|md| md.cancel.clone());
-        if let Some(c) = cancel {
+        let dispose = {
+            let g = self.inner.downloads.lock().unwrap();
+            g.get(&id).and_then(|md| md.dispose.clone())
+        };
+        if let Some(c) = &dispose {
             c.notify_one();
         }
+        self.inner.pause_intents.lock().unwrap().remove(&id);
         self.inner.queue.lock().unwrap().remove(&id);
         self.inner.downloads.lock().unwrap().remove(&id);
         self.inner.persistence.remove(id)?;
@@ -361,13 +364,38 @@ impl DownloadManager {
         self.inner.events.subscribe()
     }
 
-    /// Aborts all in-flight transfers. Does not wait for them to finish.
-    pub fn shutdown(&self) {
+    /// Gracefully shuts down all in-flight transfers.
+    ///
+    /// Signals every active download to cancel, waits for them to finish
+    /// with a bounded timeout, and aborts any that do not respond as a
+    /// final fallback.
+    pub async fn shutdown(&self) {
+        let cancels: Vec<Arc<Notify>> = {
+            let g = self.inner.downloads.lock().unwrap();
+            g.values().filter_map(|md| md.cancel.clone()).collect()
+        };
+        for c in cancels {
+            c.notify_one();
+        }
+
         let handles: Vec<JoinHandle<()>> = {
             let mut g = self.inner.downloads.lock().unwrap();
             g.values_mut().filter_map(|md| md.handle.take()).collect()
         };
-        for h in handles {
+
+        let shutdown_future = async {
+            for h in handles {
+                let _ = h.await;
+            }
+        };
+
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), shutdown_future).await;
+
+        let remaining: Vec<JoinHandle<()>> = {
+            let mut g = self.inner.downloads.lock().unwrap();
+            g.values_mut().filter_map(|md| md.handle.take()).collect()
+        };
+        for h in remaining {
             h.abort();
         }
     }
@@ -419,16 +447,18 @@ impl DownloadManager {
         }
         self.inner.events.publish(Event::Started(id));
         let cancel = Arc::new(Notify::new());
+        let dispose = Arc::new(Notify::new());
         {
             let mut g = self.inner.downloads.lock().unwrap();
             if let Some(md) = g.get_mut(&id) {
                 md.cancel = Some(cancel.clone());
+                md.dispose = Some(dispose.clone());
             }
         }
         let mgr = DownloadManager {
             inner: self.inner.clone(),
         };
-        let handle = tokio::spawn(async move { mgr.run_download(id, cancel).await });
+        let handle = tokio::spawn(async move { mgr.run_download(id, cancel, dispose).await });
         {
             let mut g = self.inner.downloads.lock().unwrap();
             if let Some(md) = g.get_mut(&id) {
@@ -527,7 +557,7 @@ impl DownloadManager {
         });
     }
 
-    async fn run_download(&self, id: DownloadId, cancel: Arc<Notify>) {
+    async fn run_download(&self, id: DownloadId, cancel: Arc<Notify>, dispose: Arc<Notify>) {
         let (dl, backend) = {
             let g = self.inner.downloads.lock().unwrap();
             let md = match g.get(&id) {
@@ -545,8 +575,6 @@ impl DownloadManager {
             let backend = self.inner.backends.get(&dl.backend).cloned();
             (dl, backend)
         };
-        // `count_active` re-locks `downloads`, so it must run after the lock
-        // above is released (std::sync::Mutex is not reentrant).
         let rate = self.inner.config.bandwidth.limiter_for(self.count_active());
         let task = BackendTask {
             id,
@@ -562,6 +590,8 @@ impl DownloadManager {
             })),
             cancel: Some(cancel.clone()),
             rate_limiter: rate,
+            dispose: Some(dispose.clone()),
+            global_max_bytes_per_sec: self.inner.config.bandwidth.max_bytes_per_sec,
         };
 
         let backend = match backend {
@@ -615,6 +645,7 @@ impl DownloadManager {
                 }
             }
         }
+        self.inner.pause_intents.lock().unwrap().remove(&id);
         self.schedule();
     }
 
