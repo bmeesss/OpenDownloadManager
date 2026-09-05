@@ -320,12 +320,32 @@ impl DownloadManager {
     /// # Errors
     /// Returns an [`Error::Internal`] if persistence fails.
     pub fn remove(&self, id: DownloadId) -> Result<()> {
-        let dispose = {
+        let (dispose, paused_task) = {
             let g = self.inner.downloads.lock().unwrap();
-            g.get(&id).and_then(|md| md.dispose.clone())
+            let Some(md) = g.get(&id) else {
+                return Err(Error::Internal(format!("unknown download {id}")));
+            };
+            let task = if md.handle.is_none() && md.info.state == DownloadState::Paused {
+                Some(self.task_for_info(&md.info, Arc::new(Notify::new()), Arc::new(Notify::new())))
+            } else {
+                None
+            };
+            (md.dispose.clone(), task)
         };
         if let Some(c) = &dispose {
             c.notify_one();
+        }
+        if let Some(task) = paused_task {
+            let backend = {
+                let g = self.inner.downloads.lock().unwrap();
+                g.get(&id)
+                    .and_then(|md| self.inner.backends.get(&md.info.backend).cloned())
+            };
+            if let Some(backend) = backend {
+                tokio::spawn(async move {
+                    let _ = backend.dispose(task).await;
+                });
+            }
         }
         self.inner.pause_intents.lock().unwrap().remove(&id);
         self.inner.queue.lock().unwrap().remove(&id);
@@ -378,25 +398,27 @@ impl DownloadManager {
             c.notify_one();
         }
 
-        let handles: Vec<JoinHandle<()>> = {
+        let mut handles: Vec<JoinHandle<()>> = {
             let mut g = self.inner.downloads.lock().unwrap();
             g.values_mut().filter_map(|md| md.handle.take()).collect()
         };
 
-        let shutdown_future = async {
-            for h in handles {
+        let graceful = async {
+            for h in &mut handles {
                 let _ = h.await;
             }
         };
 
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), shutdown_future).await;
-
-        let remaining: Vec<JoinHandle<()>> = {
-            let mut g = self.inner.downloads.lock().unwrap();
-            g.values_mut().filter_map(|md| md.handle.take()).collect()
-        };
-        for h in remaining {
-            h.abort();
+        if tokio::time::timeout(std::time::Duration::from_secs(5), graceful)
+            .await
+            .is_err()
+        {
+            for h in &handles {
+                h.abort();
+            }
+            for h in handles {
+                let _ = h.await;
+            }
         }
     }
 
@@ -576,24 +598,6 @@ impl DownloadManager {
             (dl, backend)
         };
         let rate = self.inner.config.bandwidth.limiter_for(self.count_active());
-        let task = BackendTask {
-            id,
-            url: dl.url.clone(),
-            destination: dl.destination.clone(),
-            overwrite: dl.overwrite,
-            backend_meta: dl.backend_meta.clone(),
-            progress: Some(Arc::new(ManagerProgressSink {
-                mgr: DownloadManager {
-                    inner: self.inner.clone(),
-                },
-                id,
-            })),
-            cancel: Some(cancel.clone()),
-            rate_limiter: rate,
-            dispose: Some(dispose.clone()),
-            global_max_bytes_per_sec: self.inner.config.bandwidth.max_bytes_per_sec,
-        };
-
         let backend = match backend {
             Some(b) => b,
             None => {
@@ -606,6 +610,14 @@ impl DownloadManager {
                 return;
             }
         };
+        let mut task = self.task_for_info(&dl, cancel, dispose);
+        task.progress = Some(Arc::new(ManagerProgressSink {
+            mgr: DownloadManager {
+                inner: self.inner.clone(),
+            },
+            id,
+        }));
+        task.rate_limiter = rate;
 
         let result = backend.run(task).await;
         match result {
@@ -645,8 +657,33 @@ impl DownloadManager {
                 }
             }
         }
+        if let Some(md) = self.inner.downloads.lock().unwrap().get_mut(&id) {
+            md.handle = None;
+            md.cancel = None;
+            md.dispose = None;
+        }
         self.inner.pause_intents.lock().unwrap().remove(&id);
         self.schedule();
+    }
+
+    fn task_for_info(
+        &self,
+        dl: &Download,
+        cancel: Arc<Notify>,
+        dispose: Arc<Notify>,
+    ) -> BackendTask {
+        BackendTask {
+            id: dl.id,
+            url: dl.url.clone(),
+            destination: dl.destination.clone(),
+            overwrite: dl.overwrite,
+            backend_meta: dl.backend_meta.clone(),
+            progress: None,
+            cancel: Some(cancel),
+            rate_limiter: None,
+            dispose: Some(dispose),
+            global_max_bytes_per_sec: self.inner.config.bandwidth.max_bytes_per_sec,
+        }
     }
 
     fn recover(&self) -> Result<()> {
@@ -742,6 +779,31 @@ mod tests {
     struct FakeBackend {
         delay: Duration,
         fail_once: Arc<AtomicBool>,
+    }
+
+    struct StubbornBackend {
+        running: Arc<AtomicBool>,
+    }
+
+    struct RunningGuard(Arc<AtomicBool>);
+
+    impl Drop for RunningGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Backend for StubbornBackend {
+        fn kind(&self) -> BackendKind {
+            BackendKind::Http
+        }
+
+        async fn run(&self, _task: BackendTask) -> Result<BackendOutcome> {
+            self.running.store(true, Ordering::SeqCst);
+            let _guard = RunningGuard(self.running.clone());
+            std::future::pending().await
+        }
     }
 
     impl FakeBackend {
@@ -930,6 +992,26 @@ mod tests {
         wait_for(&mgr, id, |s| s == DownloadState::Failed, 2).await;
         mgr.retry(id).unwrap();
         wait_for(&mgr, id, |s| s == DownloadState::Completed, 5).await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_backend_that_ignores_cancellation() {
+        let (_dir, path) = tmp_db();
+        let running = Arc::new(AtomicBool::new(false));
+        let backend: Arc<dyn Backend> = Arc::new(StubbornBackend {
+            running: running.clone(),
+        });
+        let mgr = DownloadManager::open(ManagerConfig::default(), &path, vec![backend]).unwrap();
+        mgr.enqueue(spec("http://a.test/stubborn")).unwrap();
+        for _ in 0..20 {
+            if running.load(Ordering::SeqCst) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(running.load(Ordering::SeqCst));
+        mgr.shutdown().await;
+        assert!(!running.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

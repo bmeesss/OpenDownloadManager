@@ -111,13 +111,6 @@ pub trait RateLimiter: Send + Sync + 'static {
     /// Waits until `bytes` units of capacity are available and then consumes
     /// them.
     async fn acquire(&self, bytes: u64);
-
-    /// Returns the configured maximum bytes per second, or `None` if
-    /// unlimited.
-    #[must_use]
-    fn max_bytes_per_sec(&self) -> Option<u64> {
-        None
-    }
 }
 
 /// Everything a backend needs to execute one download, handed to it by the
@@ -179,6 +172,13 @@ pub trait Backend: Send + Sync + 'static {
     /// when `task.cancel` was signalled, or any other error that ended the
     /// transfer.
     async fn run(&self, task: BackendTask) -> Result<BackendOutcome>;
+
+    /// Disposes resources for a download that has no running task, such as a
+    /// paused download. Backends that do not retain resources may use the
+    /// default implementation.
+    async fn dispose(&self, _task: BackendTask) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

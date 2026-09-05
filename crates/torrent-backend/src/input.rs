@@ -16,6 +16,7 @@ use crate::error::{Error, Result};
 pub enum ParsedInput {
     Magnet { uri: String },
     TorrentBytes { bytes: Vec<u8> },
+    TorrentUrl { url: String },
 }
 
 impl ParsedInput {
@@ -28,9 +29,9 @@ impl ParsedInput {
                 uri: url.to_string(),
             })
         } else if url.scheme() == "http" || url.scheme() == "https" {
-            Err(Error::Internal(
-                "torrent URL must be fetched before inspection".into(),
-            ))
+            Ok(Self::TorrentUrl {
+                url: url.to_string(),
+            })
         } else if url.scheme() == "file" {
             let path = url
                 .to_file_path()
@@ -86,6 +87,27 @@ pub async fn inspect_torrent_bytes(
         librqbit::AddTorrentResponse::ListOnly(resp) => Ok(resp),
         _ => Err(Error::Internal(
             "unexpected response for list-only torrent".into(),
+        )),
+    }
+}
+
+/// Inspects a remote `.torrent` URL through librqbit's list-only path.
+pub async fn inspect_torrent_url(session: &Arc<Session>, url: &str) -> Result<ListOnlyResponse> {
+    let response = session
+        .add_torrent(
+            AddTorrent::from_url(url),
+            Some(AddTorrentOptions {
+                list_only: true,
+                overwrite: true,
+                ..Default::default()
+            }),
+        )
+        .await
+        .map_err(|e| Error::Network(e.to_string()))?;
+    match response {
+        librqbit::AddTorrentResponse::ListOnly(resp) => Ok(resp),
+        _ => Err(Error::InvalidInput(
+            "unexpected response for torrent URL".into(),
         )),
     }
 }

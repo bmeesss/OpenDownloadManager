@@ -24,11 +24,18 @@ impl TorrentSession {
     /// * `fastresume = false`
     /// * DHT persistence disabled (`dht.persistence = None`)
     pub async fn new(output_root: PathBuf) -> Result<Self> {
+        std::fs::create_dir_all(&output_root)
+            .map_err(|e| Error::Filesystem(format!("create torrent output root: {e}")))?;
         let opts = SessionOptions {
             persistence: None,
             fastresume: false,
             dht: Some(librqbit::DhtSessionConfig {
                 persistence: None,
+                ..Default::default()
+            }),
+            listen: Some(librqbit::ListenerOptions {
+                mode: librqbit::ListenerMode::TcpOnly,
+                listen_addr: ([0, 0, 0, 0], 0).into(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -38,7 +45,11 @@ impl TorrentSession {
             .await
             .map_err(|e| Error::Internal(format!("session init: {e}")))?;
 
-        info!(addr = ?session.listen_addr(), "torrent session ready");
+        if let Some(addr) = session.listen_addr() {
+            info!(%addr, "torrent session ready");
+        } else {
+            info!("torrent session ready without incoming listener");
+        }
         Ok(Self {
             session,
             output_root,

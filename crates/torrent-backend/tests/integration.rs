@@ -172,7 +172,10 @@ async fn expect_rejected_torrent(bytes: Vec<u8>) {
     let result = backend
         .run(task(Url::from_file_path(torrent_file).unwrap(), None))
         .await;
-    assert!(matches!(result, Err(Error::Internal(_))));
+    assert!(matches!(
+        result,
+        Err(Error::InvalidPath(_)) | Err(Error::InvalidUrl(_))
+    ));
 }
 
 async fn backend(fixture: &Fixture) -> (TorrentBackend, TempDir) {
@@ -246,6 +249,23 @@ async fn single_file_torrent_downloads() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn non_existent_output_root_is_created() {
+    let fixture = fixture(false).await;
+    let root = TempDir::new().unwrap();
+    let output = root.path().join("missing").join("nested");
+    let backend = TorrentBackend::new_with_initial_peers(output.clone(), fixture.peers.clone())
+        .await
+        .unwrap();
+    let (_torrent_dir, url) = torrent_url(&fixture);
+    tokio::time::timeout(WAIT, backend.run(task(url, None)))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(output.exists());
+    fixture.seed.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn multi_file_torrent_downloads() {
     let fixture = fixture(true).await;
     let (backend, output) = backend(&fixture).await;
@@ -299,7 +319,7 @@ async fn cancel_keeps_partial_data() {
         tokio::time::timeout(WAIT, run).await.unwrap().unwrap(),
         Err(Error::Cancelled)
     ));
-    assert!(backend.has_active_torrent(&fixture.info_hash));
+    assert!(!backend.has_active_torrent(&fixture.info_hash));
     assert!(!matches!(
         backend.torrent_state(&fixture.info_hash),
         Some(TorrentStatsState::Live)
@@ -308,6 +328,35 @@ async fn cancel_keeps_partial_data() {
         .path()
         .join(format!("odm-{}/single.bin", fixture.info_hash))
         .exists());
+    fixture.seed.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overwrite_false_retries_owned_partial_torrent() {
+    let fixture = fixture(false).await;
+    let (backend, _output) = backend(&fixture).await;
+    let (_torrent_dir, url) = torrent_url(&fixture);
+    let mut first = task(url.clone(), None);
+    first.overwrite = false;
+    let cancel = first.cancel.clone().unwrap();
+    let backend = Arc::new(backend);
+    let run = tokio::spawn({
+        let backend = backend.clone();
+        async move { backend.run(first).await }
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    cancel.notify_one();
+    assert!(matches!(
+        tokio::time::timeout(WAIT, run).await.unwrap().unwrap(),
+        Err(Error::Cancelled)
+    ));
+    let mut retry = task(url, None);
+    retry.overwrite = false;
+    tokio::time::timeout(WAIT, backend.run(retry))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!backend.has_active_torrent(&fixture.info_hash));
     fixture.seed.stop().await;
 }
 
@@ -333,7 +382,7 @@ async fn manager_cancel_keeps_data_and_marks_cancelled() {
             url,
             destination: output.path().join("unused"),
             backend: BackendKind::Torrent,
-            overwrite: true,
+            overwrite: false,
             backend_meta: serde_json::Value::Null,
         })
         .unwrap();
@@ -465,7 +514,7 @@ async fn manager_pause_cancel_and_completion_lifecycle() {
             url,
             destination: output.path().join("ignored"),
             backend: BackendKind::Torrent,
-            overwrite: true,
+            overwrite: false,
             backend_meta: serde_json::Value::Null,
         })
         .unwrap();
@@ -487,6 +536,126 @@ async fn manager_pause_cancel_and_completion_lifecycle() {
         .exists());
     manager.resume(id).unwrap();
     wait_state(&manager, id, DownloadState::Completed).await;
+    assert!(!backend.has_active_torrent(&fixture.info_hash));
+    fixture.seed.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn manager_remove_paused_disposes_torrent_and_preserves_unrelated_file() {
+    let fixture = fixture(false).await;
+    let (backend, output) = backend(&fixture).await;
+    let backend = Arc::new(backend);
+    let (_torrent_dir, url) = torrent_url(&fixture);
+    let db = output.path().join("paused-remove.sqlite");
+    let manager =
+        DownloadManager::open(ManagerConfig::default(), &db, vec![backend.clone()]).unwrap();
+    let id = manager
+        .enqueue(DownloadSpec {
+            url,
+            destination: output.path().join("unused"),
+            backend: BackendKind::Torrent,
+            overwrite: false,
+            backend_meta: serde_json::Value::Null,
+        })
+        .unwrap();
+    wait_state_any(
+        &manager,
+        id,
+        &[DownloadState::Starting, DownloadState::Downloading],
+    )
+    .await;
+    manager.pause(id).unwrap();
+    wait_state(&manager, id, DownloadState::Paused).await;
+    let folder = output.path().join(format!("odm-{}", fixture.info_hash));
+    let unrelated = folder.join("unrelated.txt");
+    std::fs::write(&unrelated, b"keep").unwrap();
+    manager.remove(id).unwrap();
+    tokio::time::timeout(WAIT, async {
+        while backend.has_active_torrent(&fixture.info_hash) || folder.join("single.bin").exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(manager.get(id).is_none());
+    assert_eq!(std::fs::read(unrelated).unwrap(), b"keep");
+    fixture.seed.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn duplicate_active_info_hash_is_rejected_without_stranding_first_download() {
+    let fixture = fixture(false).await;
+    let (backend, output) = backend(&fixture).await;
+    let backend = Arc::new(backend);
+    let (_torrent_dir, url) = torrent_url(&fixture);
+    let manager = DownloadManager::open(
+        ManagerConfig {
+            max_concurrent_downloads: 2,
+            ..Default::default()
+        },
+        &output.path().join("duplicate.sqlite"),
+        vec![backend.clone()],
+    )
+    .unwrap();
+    let first = manager
+        .enqueue(DownloadSpec {
+            url: url.clone(),
+            destination: output.path().join("a"),
+            backend: BackendKind::Torrent,
+            overwrite: false,
+            backend_meta: serde_json::Value::Null,
+        })
+        .unwrap();
+    let second = manager
+        .enqueue(DownloadSpec {
+            url,
+            destination: output.path().join("b"),
+            backend: BackendKind::Torrent,
+            overwrite: false,
+            backend_meta: serde_json::Value::Null,
+        })
+        .unwrap();
+    wait_state(&manager, second, DownloadState::Failed).await;
+    assert!(manager
+        .get(second)
+        .unwrap()
+        .error
+        .unwrap()
+        .contains("already"));
+    wait_state(&manager, first, DownloadState::Completed).await;
+    fixture.seed.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_torrent_url_is_supported_without_public_network() {
+    let fixture = fixture(false).await;
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let bytes = fixture.torrent.clone();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0u8; 4096];
+        let _ = stream.read(&mut request).await;
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            bytes.len()
+        );
+        stream.write_all(header.as_bytes()).await.unwrap();
+        stream.write_all(&bytes).await.unwrap();
+    });
+    let output = TempDir::new().unwrap();
+    let backend =
+        TorrentBackend::new_with_initial_peers(output.path().to_path_buf(), fixture.peers.clone())
+            .await
+            .unwrap();
+    let url = Url::parse(&format!("http://{addr}/fixture.torrent")).unwrap();
+    tokio::time::timeout(WAIT, backend.run(task(url, None)))
+        .await
+        .unwrap()
+        .unwrap();
+    server.await.unwrap();
     assert!(!backend.has_active_torrent(&fixture.info_hash));
     fixture.seed.stop().await;
 }
@@ -561,11 +730,12 @@ async fn wait_state_any(
 async fn backend_metadata_round_trips_and_reuses_complete_data() {
     let fixture = fixture(false).await;
     let (backend, output) = backend(&fixture).await;
-    let (_torrent_dir, url) = torrent_url(&fixture);
+    let (torrent_dir, url) = torrent_url(&fixture);
     let outcome = tokio::time::timeout(WAIT, backend.run(task(url.clone(), None)))
         .await
         .unwrap()
         .unwrap();
+    drop(torrent_dir);
     let meta: BackendMeta = serde_json::from_value(outcome.backend_meta).unwrap();
     let db = output.path().join("meta.sqlite");
     let manager = DownloadManager::open(
@@ -582,7 +752,7 @@ async fn backend_metadata_round_trips_and_reuses_complete_data() {
             url,
             destination: output.path().join("unused"),
             backend: BackendKind::Torrent,
-            overwrite: true,
+            overwrite: false,
             backend_meta: serde_json::to_value(&meta).unwrap(),
         })
         .unwrap();
@@ -639,6 +809,8 @@ async fn unsafe_torrent_paths_are_rejected() {
     expect_rejected_torrent(raw_torrent(&[("/absolute.bin", 1)])).await;
     expect_rejected_torrent(raw_torrent(&[("CON.txt", 1)])).await;
     expect_rejected_torrent(raw_torrent(&[("A.bin", 1), ("a.bin", 1)])).await;
+    expect_rejected_torrent(raw_torrent(&[("a", 1), ("a/b", 1)])).await;
+    expect_rejected_torrent(raw_torrent(&[("a/b", 1), ("a", 1)])).await;
 }
 
 #[cfg(unix)]
