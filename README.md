@@ -2,10 +2,12 @@
 
 A free and open-source desktop download manager written in Rust.
 
-> **Status:** Phase 1.5 — CLI plus a single-download HTTP engine.
-> No GUI, no browser extension, no persistence, no pause/resume, no
-> Range requests, no queue, and no BitTorrent. Those are scheduled for
-> later phases; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> **Status:** Phase 2 — protocol-neutral download manager.
+> A queue, scheduler, lifecycle state machine, SQLite persistence, event bus
+> and bandwidth policy manage one or more downloads across protocol-neutral
+> backends. The HTTP backend (`odm-download-engine`) is wired in. No GUI, no
+> browser extension, no BitTorrent, and no HTTP `Range` resume yet; see
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Workspace layout
 
@@ -15,7 +17,9 @@ binaries/cli/                 - the `download-manager` binary
 crates/core/                  - domain models and error types
 crates/http-client/           - reqwest wrapper (HEAD + streaming GET)
 crates/storage/               - filesystem abstraction + path validation
-crates/download-engine/       - orchestration
+crates/download-engine/       - HTTP backend (implements the `Backend` trait)
+crates/download-manager/      - Phase 2: queue, scheduler, lifecycle,
+                               persistence, event bus, bandwidth policy
 tests/                        - integration tests (shared library)
 docs/                         - design and architecture documentation
 ```
@@ -23,13 +27,17 @@ docs/                         - design and architecture documentation
 ## Dependency direction
 
 ```
-binaries/cli  ->  download-engine  ->  http-client  ->  (reqwest)
-                          |                |
-                          v                v
-                       storage  ->------- core
+binaries/cli  ->  download-manager  ->  download-engine  ->  http-client  ->  (reqwest)
+                          |                   |                    |
+                          v                   v                    v
+                       storage  ->---------> core <------------- storage
 ```
 
-The `core` crate has no internal dependencies. There are no cycles.
+The `core` crate has no internal dependencies. There are no cycles. The
+`download-manager` owns the queue, scheduler, lifecycle, persistence and event
+bus and drives `download-engine` (and, later, a BitTorrent backend) only
+through the protocol-neutral `Backend` trait — it never depends on `reqwest`
+directly.
 
 ## Build
 
@@ -121,11 +129,13 @@ What is actually true of the code as it stands:
 
 Stated plainly so nothing here is mistaken for a finished feature:
 
-* **No user-visible cancellation.** The engine accepts a cancellation
-  handle, but the CLI does not wire Ctrl+C to it. Interrupting a download
-  kills the process and leaves the `.part` file behind.
-* **No resume.** There is no pause/resume and no HTTP `Range` support.
-  Restarting means starting over.
+* **The CLI does not yet use the manager.** The `download-manager` binary still
+  drives the engine directly for a single download; wiring it to the
+  `odm-download-manager` queue/persistence is a later step. The manager is
+  fully exercised by its own tests and integration tests.
+* **No real resume.** Pausing stops the underlying transfer and resuming
+  re-runs it from scratch; there is no HTTP `Range` support yet.
+  `backend_meta` is reserved for future resume metadata.
 * **No redirect-limit plumbing per request.** `DownloadRequest::max_redirects`
   is validated but not applied; the redirect cap is a client-wide setting
   (10 hops by default).
@@ -133,9 +143,9 @@ Stated plainly so nothing here is mistaken for a finished feature:
   tested, but the engine does not call it. Size comes from the `GET`
   response headers, and `Content-Disposition` filenames are parsed but
   not used to name the output.
-* **No retries, mirrors, checksums, speed limits, queue or persistence.**
-* **No proxy support.** `reqwest` is built without its `system-proxy`
-  feature, so `HTTP_PROXY`/`HTTPS_PROXY` are ignored.
+* **No BitTorrent, mirrors, checksums, proxy support, or browser extension.**
+  `reqwest` is built without its `system-proxy` feature, so
+  `HTTP_PROXY`/`HTTPS_PROXY` are ignored.
 * **Orphaned `.part` files are never cleaned up.**
 * **A stalled server can hang a download indefinitely.** There is a 15 s
   connect timeout but no idle/read watchdog yet.

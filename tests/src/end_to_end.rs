@@ -253,7 +253,10 @@ async fn overwrite_true_replaces_existing_file() {
     std::fs::write(&out, b"much-longer-old-content").unwrap();
     let url = Url::parse(&format!("{}/x", server.uri())).unwrap();
 
-    let opts = DownloadOptions { overwrite: true };
+    let opts = DownloadOptions {
+        overwrite: true,
+        rate_limiter: None,
+    };
     let summary = make_engine()
         .download(&request(url, out.clone()), &opts, None, None)
         .await

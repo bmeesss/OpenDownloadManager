@@ -54,6 +54,7 @@ pub async fn run(cmd: DownloadCmd) -> anyhow::Result<()> {
 
     let opts = DownloadOptions {
         overwrite: cmd.overwrite,
+        rate_limiter: None,
     };
 
     let reporter = Arc::new(ProgressReporter::new(request.output.display().to_string()));

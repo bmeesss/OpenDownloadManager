@@ -1,0 +1,21 @@
+[package]
+name = "odm-download-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Protocol-neutral download manager for OpenDownloadManager."
+
+[dependencies]
+odm-core = { path = "../core" }
+odm-download-engine = { path = "../download-engine" }
+
+tokio = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+rusqlite = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }
+tempfile = { workspace = true }
