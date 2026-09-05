@@ -4,10 +4,9 @@
 //! the HTTP engine sit behind that interface without the manager ever
 //! depending on `reqwest` (or anything else transport-specific) directly.
 
+use crate::DownloadOptions;
 use async_trait::async_trait;
-use odm_core::{
-    Backend, BackendKind, BackendOutcome, BackendTask, DownloadOptions, DownloadRequest, Result,
-};
+use odm_core::{Backend, BackendKind, BackendOutcome, BackendTask, DownloadRequest, Result};
 
 use crate::engine::DownloadEngine;
 

@@ -1,6 +1,5 @@
 //! End-to-end test: the manager driving the real HTTP backend.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 

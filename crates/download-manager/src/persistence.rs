@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use odm_core::{BackendKind, DownloadId, DownloadState, Error, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, types::Type, Connection};
 use serde_json::Value;
 use url::Url;
 
@@ -129,27 +129,7 @@ impl Persistence {
         Ok(())
     }
 
-    /// Loads one download by id.
-    ///
-    /// # Errors
-    /// Returns an [`Error::Internal`] on a database failure.
-    pub fn get(&self, id: DownloadId) -> Result<Option<Download>> {
-        let conn = self.conn.lock().unwrap();
-        let res = conn.query_row(
-            "SELECT id, url, destination, backend, state, overwrite, total_bytes, downloaded_bytes, \
-             error, created_at, updated_at, started_at, completed_at, backend_meta \
-             FROM downloads WHERE id = ?1",
-            params![id.to_string()],
-            row_to_download,
-        );
-        match res {
-            Ok(d) => Ok(Some(d)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(db_err(e)),
-        }
-    }
-
-    /// Loads all downloads ordered by creation time.
+    /// List all persisted downloads.
     ///
     /// # Errors
     /// Returns an [`Error::Internal`] on a database failure.
@@ -217,7 +197,7 @@ impl Persistence {
             if applied.contains(&version) {
                 continue;
             }
-            let conn = self.conn.lock().unwrap();
+            let mut conn = self.conn.lock().unwrap();
             let tx = conn.transaction().map_err(db_err)?;
             tx.execute_batch(sql).map_err(db_err)?;
             tx.execute(
@@ -247,7 +227,7 @@ fn db_err(e: rusqlite::Error) -> Error {
 
 fn convert_err<E: core::error::Error + Send + Sync + 'static>(
     idx: usize,
-    kind: &'static str,
+    kind: Type,
     e: E,
 ) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(idx, kind, Box::new(e))
@@ -273,14 +253,14 @@ fn row_to_download(row: &rusqlite::Row<'_>) -> rusqlite::Result<Download> {
 
     let id = Uuid::parse_str(&id_s)
         .map(DownloadId)
-        .map_err(|e| convert_err(0, "DownloadId", e))?;
-    let url = Url::parse(&url_s).map_err(|e| convert_err(1, "Url", e))?;
+        .map_err(|e| convert_err(0, Type::Text, e))?;
+    let url = Url::parse(&url_s).map_err(|e| convert_err(1, Type::Text, e))?;
     let backend = backend_s
         .parse::<BackendKind>()
-        .map_err(|e| convert_err(3, "BackendKind", e))?;
+        .map_err(|e| convert_err(3, Type::Text, e))?;
     let state = state_s
         .parse::<DownloadState>()
-        .map_err(|e| convert_err(4, "DownloadState", e))?;
+        .map_err(|e| convert_err(4, Type::Text, e))?;
     let backend_meta = meta_s
         .as_deref()
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
@@ -311,7 +291,8 @@ mod tests {
 
     fn tmp() -> (TempDir, std::path::PathBuf) {
         let dir = TempDir::new().unwrap();
-        (dir, dir.path().join("db.sqlite"))
+        let path = dir.path().join("db.sqlite");
+        (dir, path)
     }
 
     fn sample(state: DownloadState) -> Download {
@@ -339,7 +320,12 @@ mod tests {
         let p = Persistence::open(&path).unwrap();
         let d = sample(DownloadState::Queued);
         p.save(&d).unwrap();
-        let got = p.get(d.id).unwrap().unwrap();
+        let got = p
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|x| x.id == d.id)
+            .unwrap();
         assert_eq!(got.id, d.id);
         assert_eq!(got.url, d.url);
         assert_eq!(got.state, DownloadState::Queued);
@@ -364,9 +350,9 @@ mod tests {
         let p = Persistence::open(&path).unwrap();
         let d = sample(DownloadState::Completed);
         p.save(&d).unwrap();
-        assert!(p.get(d.id).unwrap().is_some());
+        assert!(p.list().unwrap().iter().any(|x| x.id == d.id));
         p.remove(d.id).unwrap();
-        assert!(p.get(d.id).unwrap().is_none());
+        assert!(!p.list().unwrap().iter().any(|x| x.id == d.id));
     }
 
     #[test]

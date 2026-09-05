@@ -4,7 +4,7 @@
 //! and not yet handed to a backend, in enqueue order. The scheduler is what
 //! decides how many of them may run at once.
 
-use alloc::collections::VecDeque;
+use std::collections::VecDeque;
 
 use odm_core::DownloadId;
 
@@ -56,7 +56,6 @@ impl Queue {
     }
 
     /// Iterates the queued ids in enqueue order.
-    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = &DownloadId> {
         self.order.iter()
     }

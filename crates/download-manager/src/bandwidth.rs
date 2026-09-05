@@ -1,11 +1,11 @@
 //! Bandwidth policy and a token-bucket rate limiter.
 
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use async_trait::async_trait;
 use odm_core::RateLimiter;
+use tokio::sync::Mutex;
 use tokio::time::Duration;
 
 /// The manager's bandwidth policy: a single global cap shared across the
@@ -34,10 +34,8 @@ impl BandwidthPolicy {
     /// The per-download share of the global cap given `active` transfers.
     #[must_use]
     pub fn per_download_budget(&self, active: usize) -> Option<u64> {
-        match self.max_bytes_per_sec {
-            None => None,
-            Some(total) => Some(total / active.max(1) as u64),
-        }
+        self.max_bytes_per_sec
+            .map(|total| total / active.max(1) as u64)
     }
 
     /// Builds a rate limiter for one download, or `None` when unlimited.
@@ -80,10 +78,10 @@ impl RateLimiter for TokenBucket {
         let need = bytes as f64;
         loop {
             let now = Instant::now();
-            let mut last = self.last.lock().unwrap();
+            let mut last = self.last.lock().await;
             let elapsed = now.duration_since(*last).as_secs_f64();
             *last = now;
-            let mut tokens = self.tokens.lock().unwrap();
+            let mut tokens = self.tokens.lock().await;
             *tokens += elapsed * self.rate as f64;
             if *tokens > self.rate as f64 {
                 *tokens = self.rate as f64;
@@ -108,7 +106,7 @@ mod tests {
     #[test]
     fn unlimited_policy_has_no_budget() {
         assert_eq!(BandwidthPolicy::unlimited().per_download_budget(5), None);
-        assert_eq!(BandwidthPolicy::unlimited().limiter_for(5), None);
+        assert!(BandwidthPolicy::unlimited().limiter_for(5).is_none());
     }
 
     #[test]

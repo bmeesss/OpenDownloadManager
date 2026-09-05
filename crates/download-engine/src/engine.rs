@@ -14,21 +14,12 @@ use tokio::sync::Notify;
 use tracing::{info, warn};
 
 /// Options that control a single download.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DownloadOptions {
     /// Whether to overwrite an existing file at the target path.
     pub overwrite: bool,
     /// Optional byte-rate limiter applied to the transfer.
     pub rate_limiter: Option<Arc<dyn RateLimiter>>,
-}
-
-impl Default for DownloadOptions {
-    fn default() -> Self {
-        Self {
-            overwrite: false,
-            rate_limiter: None,
-        }
-    }
 }
 
 impl std::fmt::Debug for DownloadOptions {

@@ -1,6 +1,6 @@
 //! The protocol-neutral download manager.
 
-use alloc::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -670,12 +670,13 @@ impl DownloadManager {
                 }
                 None => {
                     let id = dl.id;
+                    let state = dl.state;
                     self.inner
                         .downloads
                         .lock()
                         .unwrap()
                         .insert(id, ManagedDownload::new(dl));
-                    if dl.state == DownloadState::Queued {
+                    if state == DownloadState::Queued {
                         self.inner.queue.lock().unwrap().enqueue(id);
                     }
                 }
@@ -701,7 +702,7 @@ impl ProgressSink for ManagerProgressSink {
 mod tests {
     use super::*;
     use crate::config::ManagerConfig;
-    use odm_core::{BackendOutcome, BackendTask, RateLimiter};
+    use odm_core::{BackendOutcome, BackendTask};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -953,8 +954,8 @@ mod tests {
             Arc::new(FakeBackend::new(Duration::from_millis(10), false));
         let mgr = DownloadManager::open(ManagerConfig::default(), &path, vec![backend]).unwrap();
 
-        let interrupted = mgr
-            .list()
+        let list = mgr.list();
+        let interrupted = list
             .iter()
             .find(|d| d.error.as_deref() == Some("interrupted by manager restart"));
         assert!(
